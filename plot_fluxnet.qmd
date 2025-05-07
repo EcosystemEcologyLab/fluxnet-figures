@@ -1,0 +1,161 @@
+---
+title: "Initial FLUXNET Plots"
+author: "Kristina Riemer & Dave Moore"
+date: "`r Sys.Date()`"
+format: html
+editor: visual
+---
+
+## TODO list
+
+- Data
+  - Download sites programatically with R package `amerifluxr` function [`amf_download_fluxnet.R`](https://github.com/chuhousen/amerifluxr/blob/master/R/amf_download_fluxnet.R)
+  - Get site metadata programmatically
+- Plots
+  - Scale by number of years for each date
+  - Smooth time series trend with `stat_smooth`
+  - Add more sites...
+
+## Draft potential figures
+
+### Read in libraries
+
+```{r, output=FALSE}
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+```
+
+
+### Read in data
+
+Data details
+
+- Site: [US-SRM](https://ameriflux.lbl.gov/sites/siteinfo/US-SRM) (Santa Rita Mesquite)
+- Years: 2004 - 2023
+- IGBP: Woody Savannas
+
+```{r}
+single_site_daily <- read.csv("data/AMF_US-SRM_FLUXNET_FULLSET_2004-2023_3-6/AMF_US-SRM_FLUXNET_FULLSET_DD_2004-2023_3-6.csv")
+```
+
+### Create initial seasonal figures
+
+Show average daily values (with standard deviations) for one site for 3 variables: 
+
+1. GPP_NT_VUT_REF
+2. RECO_NT_VUT_REF
+3. NEE_VUT_REF
+
+```{r, echo=FALSE}
+gpp_by_date <- single_site_daily %>% 
+  mutate(date_object = ymd(TIMESTAMP), 
+         date_minus_year = format(date_object, '%m-%d')) %>% 
+  group_by(date_minus_year) %>% 
+  summarize(gpp_mean = mean(GPP_NT_VUT_REF), 
+            gpp_sd = sd(GPP_NT_VUT_REF)) %>% 
+  mutate(date_fake_year = ymd(paste0("2024-", date_minus_year)))
+
+ggplot(gpp_by_date, aes(x = date_fake_year, y = gpp_mean)) +
+  geom_ribbon(aes(ymax = gpp_mean + gpp_sd, ymin = gpp_mean - gpp_sd), 
+              fill = "grey") + 
+    geom_point() +
+    labs(x = "Date",
+         y = "Mean GPP +/- SD") +
+    theme_minimal() + 
+  scale_x_date(date_labels = "%B")
+```
+
+
+```{r, echo=FALSE}
+reco_by_date <- single_site_daily %>% 
+  mutate(date_object = ymd(TIMESTAMP), 
+         date_minus_year = format(date_object, '%m-%d')) %>% 
+  group_by(date_minus_year) %>% 
+  summarize(reco_mean = mean(RECO_NT_VUT_REF), 
+            reco_sd = sd(RECO_NT_VUT_REF)) %>% 
+  mutate(date_fake_year = ymd(paste0("2024-", date_minus_year)))
+
+ggplot(reco_by_date, aes(x = date_fake_year, y = reco_mean)) +
+  geom_ribbon(aes(ymax = reco_mean + reco_sd, ymin = reco_mean - reco_sd), 
+              fill = "grey") + 
+    geom_point() +
+    labs(x = "Date",
+         y = "Mean RECO +/- SD") +
+    theme_minimal() + 
+  scale_x_date(date_labels = "%B")
+```
+
+```{r, echo=FALSE}
+nee_by_date <- single_site_daily %>% 
+  mutate(date_object = ymd(TIMESTAMP), 
+         date_minus_year = format(date_object, '%m-%d')) %>% 
+  group_by(date_minus_year) %>% 
+  summarize(nee_mean = mean(NEE_VUT_REF), 
+            nee_sd = sd(NEE_VUT_REF)) %>% 
+  mutate(date_fake_year = ymd(paste0("2024-", date_minus_year)))
+
+ggplot(nee_by_date, aes(x = date_fake_year, y = nee_mean)) +
+  geom_ribbon(aes(ymax = nee_mean + nee_sd, ymin = nee_mean - nee_sd), 
+              fill = "grey") + 
+    geom_point() +
+    labs(x = "Date",
+         y = "Mean NEE +/- SD") +
+    theme_minimal() + 
+  scale_x_date(date_labels = "%B")
+```
+
+#### Code for 3 plots
+
+```{r, output=FALSE}
+gpp_by_date <- single_site_daily %>% 
+  mutate(date_object = ymd(TIMESTAMP), 
+         date_minus_year = format(date_object, '%m-%d')) %>% 
+  group_by(date_minus_year) %>% 
+  summarize(gpp_mean = mean(GPP_NT_VUT_REF), 
+            gpp_sd = sd(GPP_NT_VUT_REF)) %>% 
+  mutate(date_fake_year = ymd(paste0("2024-", date_minus_year)))
+
+ggplot(gpp_by_date, aes(x = date_fake_year, y = gpp_mean)) +
+  geom_ribbon(aes(ymax = gpp_mean + gpp_sd, ymin = gpp_mean - gpp_sd), 
+              fill = "grey") + 
+    geom_point() +
+    labs(x = "Date",
+         y = "Mean GPP +/- SD") +
+    theme_minimal() + 
+  scale_x_date(date_labels = "%B")
+
+reco_by_date <- single_site_daily %>% 
+  mutate(date_object = ymd(TIMESTAMP), 
+         date_minus_year = format(date_object, '%m-%d')) %>% 
+  group_by(date_minus_year) %>% 
+  summarize(reco_mean = mean(RECO_NT_VUT_REF), 
+            reco_sd = sd(RECO_NT_VUT_REF)) %>% 
+  mutate(date_fake_year = ymd(paste0("2024-", date_minus_year)))
+
+ggplot(reco_by_date, aes(x = date_fake_year, y = reco_mean)) +
+  geom_ribbon(aes(ymax = reco_mean + reco_sd, ymin = reco_mean - reco_sd), 
+              fill = "grey") + 
+    geom_point() +
+    labs(x = "Date",
+         y = "Mean RECO +/- SD") +
+    theme_minimal() + 
+  scale_x_date(date_labels = "%B")
+
+nee_by_date <- single_site_daily %>% 
+  mutate(date_object = ymd(TIMESTAMP), 
+         date_minus_year = format(date_object, '%m-%d')) %>% 
+  group_by(date_minus_year) %>% 
+  summarize(nee_mean = mean(NEE_VUT_REF), 
+            nee_sd = sd(NEE_VUT_REF)) %>% 
+  mutate(date_fake_year = ymd(paste0("2024-", date_minus_year)))
+
+ggplot(nee_by_date, aes(x = date_fake_year, y = nee_mean)) +
+  geom_ribbon(aes(ymax = nee_mean + nee_sd, ymin = nee_mean - nee_sd), 
+              fill = "grey") + 
+    geom_point() +
+    labs(x = "Date",
+         y = "Mean NEE +/- SD") +
+    theme_minimal() + 
+  scale_x_date(date_labels = "%B")
+```
