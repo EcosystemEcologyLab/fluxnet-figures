@@ -27,6 +27,43 @@ library(lubridate)
 library(ggplot2)
 ```
 
+### Download data
+
+Get site metadata
+
+- Is the IGBP right? 
+
+```{r}
+library(amerifluxr)
+site <- amf_site_info()
+site %>% 
+  filter(SITE_ID == "US-SRM")
+```
+
+Download site data
+
+- Need dev version of package to get `amf_download_fluxnet` function
+- Increase timeout because default of one minute isn't enough
+
+```{r}
+#| eval: false
+if (!dir.exists("data")){
+  dir.create("data")
+}
+
+options(timeout = 600)
+amf_download_fluxnet(user_id = "kristinariemer", 
+                     user_email = "kristinariemer@arizona.edu", 
+                     site_id = "US-xSR", 
+                     data_product = "FLUXNET",
+                     data_variant = "FULLSET",
+                     data_policy = "CCBY4.0",
+                     agree_policy = TRUE, 
+                     intended_use = "synthesis", 
+                     intended_use_text = "creating pipeline for standardized figures", 
+                     out_dir = "data/")
+unzip("data/AMF_US-xSR_FLUXNET_FULLSET_2017-2021_3-5.zip")
+```
 
 ### Read in data
 
