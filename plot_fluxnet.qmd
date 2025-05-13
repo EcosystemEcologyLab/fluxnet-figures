@@ -20,11 +20,17 @@ editor: visual
 
 ### Read in libraries
 
+::: {.callout-note}
+Need dev version of `amerifluxr` package to get `amf_download_fluxnet` function. 
+:::
+
 ```{r}
 #| output: false
 library(dplyr)
 library(lubridate)
 library(ggplot2)
+#devtools::install_github("chuhousen/amerifluxr")
+library(amerifluxr)
 ```
 
 ### Download data
@@ -34,24 +40,27 @@ Get site metadata
 - Is the IGBP right? 
 
 ```{r}
-library(amerifluxr)
-site <- amf_site_info()
-site %>% 
+site_metadata <- amf_site_info()
+site_metadata %>% 
   filter(SITE_ID == "US-SRM")
 ```
+Do download setup
 
-Download site data
-
-- Need dev version of package to get `amf_download_fluxnet` function
 - Increase timeout because default of one minute isn't enough
 
 ```{r}
-#| eval: false
 if (!dir.exists("data")){
   dir.create("data")
 }
 
 options(timeout = 600)
+```
+
+Download individual site data
+
+```{r}
+#| eval: false
+
 amf_download_fluxnet(user_id = "kristinariemer", 
                      user_email = "kristinariemer@arizona.edu", 
                      site_id = "US-xSR", 
@@ -64,6 +73,52 @@ amf_download_fluxnet(user_id = "kristinariemer",
                      out_dir = "data/")
 unzip("data/AMF_US-xSR_FLUXNET_FULLSET_2017-2021_3-5.zip")
 ```
+
+Download multiple sites data
+
+- Get list of AZ sites - contains all the sites in the list from Dave
+- Do they have fluxnet available? It returns `Cannot find data from US-MtB` if not
+- Add code to not redownload if it has already been downloaded
+
+```{r}
+az_sites <- site %>% 
+  filter(STATE == "AZ")
+
+all_site_dirs <- list.dirs("data")
+
+for(site in az_sites$SITE_ID[16]){
+  print(site)
+  #site_dir_name <- paste0("data/", "AMF_", site, "_FLUXNET_FULLSET")
+  #print(site_dir_name)
+  if(site %in% all_site_dirs){
+    print("Already downloaded")
+  }
+  #if(!dir.exists(site_dir_name))
+  #if vector of dir names contains site name...
+  #check to see if data folder for site already exists; if else
+  #download
+  #proceed on error? 
+  # tryCatch({
+  #   amf_download_fluxnet(user_id = "kristinariemer", 
+  #                    user_email = "kristinariemer@arizona.edu", 
+  #                    site_id = site, 
+  #                    data_product = "FLUXNET",
+  #                    data_variant = "FULLSET",
+  #                    data_policy = "CCBY4.0",
+  #                    agree_policy = TRUE, 
+  #                    intended_use = "synthesis", 
+  #                    intended_use_text = "creating pipeline for standardized figures", 
+  #                    out_dir = "data/")
+  # }, error = function(e){cat("ERROR:",conditionMessage(e), "\n")})
+  
+  #unzip
+}
+
+
+
+```
+
+
 
 ### Read in data
 
