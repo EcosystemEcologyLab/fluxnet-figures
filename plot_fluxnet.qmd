@@ -9,14 +9,10 @@ editor: visual
 ## TODO list
 
 - Data
-  - Download sites programatically with R package `amerifluxr` function [`amf_download_fluxnet.R`](https://github.com/chuhousen/amerifluxr/blob/master/R/amf_download_fluxnet.R)
-  - Get site metadata programmatically
 - Plots
   - Scale by number of years for each date
-  - Smooth time series trend with `stat_smooth` or other methods: what is typically done with flux data? 
-  - Add more sites...
 
-## Draft potential figures
+## Prep data
 
 ### Read in libraries
 
@@ -32,13 +28,13 @@ library(ggplot2)
 #devtools::install_github("chuhousen/amerifluxr")
 library(amerifluxr)
 library(stringr)
+library(readr)
+library(purrr)
 ```
 
-### Download data
+### Download site metadata
 
-Get site metadata
-
-- Is the IGBP right? 
+Showing what metadata is available for a site
 
 ```{r}
 site_metadata <- amf_site_info()
@@ -57,7 +53,9 @@ if (!dir.exists("data")){
 options(timeout = 600)
 ```
 
-Download individual site data
+### Download individual site data
+
+Demonstrating how to use `amf_download_fluxnet` function
 
 ```{r}
 #| eval: false
@@ -75,7 +73,7 @@ amf_download_fluxnet(user_id = "kristinariemer",
 unzip("data/AMF_US-xSR_FLUXNET_FULLSET_2017-2021_3-5.zip")
 ```
 
-Download multiple sites data
+### Download multiple sites data
 
 This is for all of the Arizona sites, which includes all the sites in Dave's list. Gets list of sites that already have data downloaded (`downloaded_sites`). Then goes through each Arizona site and downloads the data if needed. If only BASE data is available, it returns the message `Cannot find data from [site]`. Downloads the zip file and unzips it. 
 
@@ -114,7 +112,7 @@ for(site in az_sites$SITE_ID){
 
 ### Read in data
 
-Data details
+Single site details
 
 - Site: [US-SRM](https://ameriflux.lbl.gov/sites/siteinfo/US-SRM) (Santa Rita Mesquite)
 - Years: 2004 - 2023
@@ -124,15 +122,27 @@ Data details
 single_site_daily <- read.csv("data/AMF_US-SRM_FLUXNET_FULLSET_2004-2023_3-6/AMF_US-SRM_FLUXNET_FULLSET_DD_2004-2023_3-6.csv")
 ```
 
-### Drafts of seasonal figures
+Multiple sites
 
-All plots are from one site for 3 variables: 
+```{r}
+#| output: false
+
+sites_paths <- list.files(".", pattern = "(FLUXNET_FULLSET_DD)", recursive = TRUE) 
+
+multiple_sites_daily <- map_df(sites_paths, ~read_csv(.x) %>% mutate(file = basename(.x), .before = 1)) %>% 
+  mutate(file = str_split_i(file, "_", 2)) %>% 
+  rename(site = file)
+```
+
+## Create figures
+
+All plots are for 3 variables: 
 
 1. GPP_NT_VUT_REF
 2. RECO_NT_VUT_REF
 3. NEE_VUT_REF
 
-#### Entire time series
+### Entire time series - single site
 
 Lots of ways to smooth time series (i.e., filter)
 
@@ -187,7 +197,7 @@ ggplot(total_ts_nee, aes(x = date_object, y = NEE_VUT_REF)) +
   theme_classic()
 ```
 
-#### Average annual time series
+### Average annual time series - single site
 
 Show average daily values (with standard deviations)
 
@@ -245,3 +255,55 @@ ggplot(nee_by_date, aes(x = date_fake_year, y = nee_mean)) +
   scale_x_date(date_labels = "%B")
 
 ```
+
+### Average annual time series - multiple sites
+
+Textbook figures: 
+
+![](textbook_figures/seasonal_gpp_nee.png)
+
+
+Show average daily values by site (symbols) and vegetation type (colors)
+
+(Something wrong with GPP values for site US-LS2)
+
+```{r}
+#| code-fold: true
+#| warning: false
+
+gpp_by_date_sites <- multiple_sites_daily %>% 
+  mutate(date_object = ymd(TIMESTAMP), 
+         date_minus_year = format(date_object, '%m-%d')) %>% 
+  group_by(site, date_minus_year) %>% 
+  summarize(gpp_mean = mean(GPP_NT_VUT_REF), 
+            gpp_sd = sd(GPP_NT_VUT_REF), 
+            reco_mean = mean(RECO_NT_VUT_REF), 
+            reco_sd = sd(RECO_NT_VUT_REF), 
+            nee_mean = mean(NEE_VUT_REF), 
+            nee_sd = sd(NEE_VUT_REF)) %>% 
+  mutate(date_fake_year = ymd(paste0("2024-", date_minus_year))) %>% 
+  left_join(site_metadata, by = c("site" = "SITE_ID")) %>% 
+  filter(site != "US-LS2")
+
+ggplot(gpp_by_date_sites, aes(x = date_fake_year, y = gpp_mean)) +
+    geom_point(aes(color = IGBP, shape = site)) +
+    labs(x = "Date",
+         y = "Mean GPP") +
+    theme_minimal() + 
+  scale_x_date(date_labels = "%B")
+
+ggplot(gpp_by_date_sites, aes(x = date_fake_year, y = reco_mean)) +
+    geom_point(aes(color = IGBP, shape = site)) +
+    labs(x = "Date",
+         y = "Mean RECO") +
+    theme_minimal() + 
+  scale_x_date(date_labels = "%B")
+
+ggplot(gpp_by_date_sites, aes(x = date_fake_year, y = nee_mean)) +
+    geom_point(aes(color = IGBP, shape = site)) +
+    labs(x = "Date",
+         y = "Mean NEE") +
+    theme_minimal() + 
+  scale_x_date(date_labels = "%B")
+```
+
