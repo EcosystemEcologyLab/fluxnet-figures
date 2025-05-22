@@ -31,6 +31,7 @@ library(lubridate)
 library(ggplot2)
 #devtools::install_github("chuhousen/amerifluxr")
 library(amerifluxr)
+library(stringr)
 ```
 
 ### Download data
@@ -76,49 +77,40 @@ unzip("data/AMF_US-xSR_FLUXNET_FULLSET_2017-2021_3-5.zip")
 
 Download multiple sites data
 
-- Get list of AZ sites - contains all the sites in the list from Dave
-- Do they have fluxnet available? It returns `Cannot find data from US-MtB` if not
-- Add code to not redownload if it has already been downloaded
+This is for all of the Arizona sites, which includes all the sites in Dave's list. Gets list of sites that already have data downloaded (`downloaded_sites`). Then goes through each Arizona site and downloads the data if needed. If only BASE data is available, it returns the message `Cannot find data from [site]`. Downloads the zip file and unzips it. 
 
 ```{r}
-az_sites <- site %>% 
+#| eval: false
+
+az_sites <- site_metadata %>% 
   filter(STATE == "AZ")
 
-all_site_dirs <- list.dirs("data")
+downloaded_sites <- list.dirs("data") %>% 
+  str_split_i("_", 2)
 
-for(site in az_sites$SITE_ID[16]){
-  print(site)
-  #site_dir_name <- paste0("data/", "AMF_", site, "_FLUXNET_FULLSET")
-  #print(site_dir_name)
-  if(site %in% all_site_dirs){
-    print("Already downloaded")
-  }
-  #if(!dir.exists(site_dir_name))
-  #if vector of dir names contains site name...
-  #check to see if data folder for site already exists; if else
-  #download
-  #proceed on error? 
-  # tryCatch({
-  #   amf_download_fluxnet(user_id = "kristinariemer", 
-  #                    user_email = "kristinariemer@arizona.edu", 
-  #                    site_id = site, 
-  #                    data_product = "FLUXNET",
-  #                    data_variant = "FULLSET",
-  #                    data_policy = "CCBY4.0",
-  #                    agree_policy = TRUE, 
-  #                    intended_use = "synthesis", 
-  #                    intended_use_text = "creating pipeline for standardized figures", 
-  #                    out_dir = "data/")
-  # }, error = function(e){cat("ERROR:",conditionMessage(e), "\n")})
-  
-  #unzip
+for(site in az_sites$SITE_ID){
+  if(!site %in% downloaded_sites){
+    print(paste0("Downloading data for ", site))
+    tryCatch({
+      amf_download_fluxnet(user_id = "kristinariemer",
+                           user_email = "kristinariemer@arizona.edu",
+                           site_id = site,
+                           data_product = "FLUXNET",
+                           data_variant = "FULLSET",
+                           data_policy = "CCBY4.0",
+                           agree_policy = TRUE,
+                           intended_use = "synthesis",
+                           intended_use_text = "creating pipeline for standardized figures",
+                           out_dir = "data/")
+      zip_path <- Sys.glob(file.path("data", paste0("AMF_", site, "*")))
+      unzipped_path <- tools::file_path_sans_ext(zip_path)
+      unzip(zip_path, exdir = unzipped_path)
+      }, error = function(e){cat("ERROR:",conditionMessage(e), "\n")})
+    } else {
+      print(paste0("Data has already been downloaded for ", site))
+    }
 }
-
-
-
 ```
-
-
 
 ### Read in data
 
@@ -253,6 +245,3 @@ ggplot(nee_by_date, aes(x = date_fake_year, y = nee_mean)) +
   scale_x_date(date_labels = "%B")
 
 ```
-
-
-
