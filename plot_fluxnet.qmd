@@ -120,6 +120,7 @@ Single site details
 
 ```{r}
 single_site_daily <- read.csv("data/AMF_US-SRM_FLUXNET_FULLSET_2004-2023_3-6/AMF_US-SRM_FLUXNET_FULLSET_DD_2004-2023_3-6.csv")
+single_site_hourly <- read.csv("data/AMF_US-SRM_FLUXNET_FULLSET_2004-2023_3-6/AMF_US-SRM_FLUXNET_FULLSET_HH_2004-2023_3-6.csv")
 ```
 
 Multiple sites
@@ -305,5 +306,35 @@ ggplot(gpp_by_date_sites, aes(x = date_fake_year, y = nee_mean)) +
          y = "Mean NEE") +
     theme_minimal() + 
   scale_x_date(date_labels = "%B")
+```
+### Daily energy flux
+
+Textbook figures: 
+
+![](textbook_figudaily_energy_flux.png)
+
+Ameriflux variables: 
+
+- NETRAD: Net radiation
+- SW_IN: Shortwave radiation, incoming
+- SW_OUT: Shortwave radiation, outgoing
+- LW_IN: Longwave radiation, incoming
+- LW_OUT: Longwave radiation, outgoing
+
+```{r}
+rad_means <- single_site_hourly %>% 
+  mutate(date_object = ymd_hm(TIMESTAMP_START), 
+         time = format(as.POSIXct(date_object), format = '%H:%M')) %>% 
+  group_by(time) %>% 
+  summarise(rn_mean = mean(NETRAD))
+
+
+ggplot(rad_means, aes(x = time, y = rn_mean)) +
+  geom_point() +
+  labs(x = "Time",
+       y = "Energy flux") +
+  theme_minimal() #+
+  #scale_x_time(breaks = "2 hours")
+
 ```
 
