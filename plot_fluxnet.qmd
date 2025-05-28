@@ -128,6 +128,7 @@ Single site details
 ```{r}
 single_site_daily <- read.csv("data/AMF_US-SRM_FLUXNET_FULLSET_2004-2023_3-6/AMF_US-SRM_FLUXNET_FULLSET_DD_2004-2023_3-6.csv")
 single_site_hourly <- read.csv("data/AMF_US-SRM_FLUXNET_FULLSET_2004-2023_3-6/AMF_US-SRM_FLUXNET_FULLSET_HH_2004-2023_3-6.csv")
+single_site_annually <- read.csv("data/AMF_US-SRM_FLUXNET_FULLSET_2004-2023_3-6/AMF_US-SRM_FLUXNET_FULLSET_YY_2004-2023_3-6.csv")
 ```
 
 Multiple sites
@@ -135,16 +136,22 @@ Multiple sites
 ```{r}
 #| output: false
 
-sites_paths <- list.files(".", pattern = "(FLUXNET_FULLSET_DD)", recursive = TRUE) 
+daily_sites_paths <- list.files(".", pattern = "(FLUXNET_FULLSET_DD)", recursive = TRUE) 
 
-multiple_sites_daily <- map_df(sites_paths, ~read_csv(.x) %>% mutate(file = basename(.x), .before = 1)) %>% 
+multiple_sites_daily <- map_df(daily_sites_paths, ~read_csv(.x) %>% mutate(file = basename(.x), .before = 1)) %>% 
+  mutate(file = str_split_i(file, "_", 2)) %>% 
+  rename(site = file)
+
+annual_sites_paths <- list.files(".", pattern = "(FLUXNET_FULLSET_YY)", recursive = TRUE) 
+
+multiple_sites_annual <- map_df(annual_sites_paths, ~read_csv(.x) %>% mutate(file = basename(.x), .before = 1)) %>% 
   mutate(file = str_split_i(file, "_", 2)) %>% 
   rename(site = file)
 ```
 
 ## Figures
 
-All plots are for 3 variables: 
+Find all variables described on the [FULLSET Data Product page](https://fluxnet.org/data/fluxnet2015-dataset/fullset-data-product/). Plots are generally of 3 variables: 
 
 1. GPP_NT_VUT_REF
 2. RECO_NT_VUT_REF
@@ -371,4 +378,75 @@ ggplot(rad_means, aes(x = time, y = energy_flux_value)) +
 2. There are a few options for shortwave in besides SW_IN_F: SW_IN_POT, SW_IN_F_MDS, SW_IN_ERA. Which of these is the one we want? 
 3. Longwave in also has those options, plus JSB ones
 4. Add standard deviation to these means? 
+:::
+
+### Comparison to meteorological variables (multiple sites)
+
+Textbook figure (for NEE): 
+
+![](textbook_figures/meteo_comp.png)
+
+Meteorological variables (bold indicates variable in figures): 
+
+1. P: Precipitation - not in annual datasets
+2. P_ERA: Precipitation, downscaled from ERA, linearly regressed using measured only site data
+3. **P_F**: Precipitation consolidated from P and P_ERA
+4. TA_F_MDS: Air temperature, gapfilled using MDS method
+5. TA_ERA: Air temperature, downscaled from ERA, linearly regressed using measured only site data
+6. **TA_F**: Air temperature, consolidated from TA_F_MDS and TA_ERA
+
+Remove site US-LS2 with high negative values
+
+```{r}
+multiple_sites_annual_clean <- multiple_sites_annual %>% 
+  filter(site != "US-LS2")
+```
+
+Show annual precipitation, summed from daily data, against three main variables annually. 
+
+```{r}
+#| code-fold: true
+
+ggplot(multiple_sites_annual_clean, aes(x = P_F, y = GPP_NT_VUT_REF, color = site)) +
+  geom_point() +
+  labs(x = "Precipitation (mm y-1)", y = "Annual GPP") +
+  theme_minimal()
+
+ggplot(multiple_sites_annual_clean, aes(x = P_F, y = RECO_NT_VUT_REF, color = site)) +
+  geom_point() +
+  labs(x = "Precipitation (mm y-1)", y = "Annual RECO") +
+  theme_minimal()
+
+ggplot(multiple_sites_annual_clean, aes(x = P_F, y = NEE_VUT_REF, color = site)) +
+  geom_point() +
+  labs(x = "Precipitation (mm y-1)", y = "Annual NEE") +
+  theme_minimal()
+```
+
+Show annual temperature, averaged from daily data, against three main variables annually. 
+
+```{r}
+#| code-fold: true
+
+ggplot(multiple_sites_annual_clean, aes(x = TA_F, y = GPP_NT_VUT_REF, color = site)) +
+  geom_point() +
+  labs(x = "Temperature (C)", y = "Annual GPP") +
+  theme_minimal()
+
+ggplot(multiple_sites_annual_clean, aes(x = TA_F, y = RECO_NT_VUT_REF, color = site)) +
+  geom_point() +
+  labs(x = "Temperature (C)", y = "Annual RECO") +
+  theme_minimal()
+
+ggplot(multiple_sites_annual_clean, aes(x = TA_F, y = NEE_VUT_REF, color = site)) +
+  geom_point() +
+  labs(x = "Temperature (C)", y = "Annual NEE") +
+  theme_minimal()
+```
+
+::: {.callout-tip}
+## Questions
+
+1. We want to do this for evapotranspiration; which variable is that in the dataset? 
+2. Do precipitation variable P and temp variable TA_F_MDS come from measured site data? 
 :::
