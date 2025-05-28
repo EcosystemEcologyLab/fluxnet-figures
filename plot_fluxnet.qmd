@@ -2,8 +2,12 @@
 title: "Initial FLUXNET Plots"
 author: "Kristina Riemer & Dave Moore"
 date: "`r Sys.Date()`"
-format: html
-editor: visual
+format:
+  html:
+    toc: true
+    toc-expand: 2
+    toc-location: left
+    css: styles.css
 ---
 
 ## TODO list
@@ -14,9 +18,9 @@ editor: visual
   - Scale by number of years for each date
   - Do all initial plots
 
-## Prep data
+## Data
 
-### Read in libraries
+### Read in libraries {.unnumbered .unlisted}
 
 ::: {.callout-note}
 Need dev version of `amerifluxr` package to get `amf_download_fluxnet` function. 
@@ -35,7 +39,7 @@ library(purrr)
 library(tidyr)
 ```
 
-### Download site metadata
+### Download site metadata {.unnumbered .unlisted}
 
 Showing what metadata is available for a site
 
@@ -56,7 +60,7 @@ if (!dir.exists("data")){
 options(timeout = 600)
 ```
 
-### Download individual site data
+### Download individual site data {.unnumbered .unlisted}
 
 Demonstrating how to use `amf_download_fluxnet` function
 
@@ -76,7 +80,7 @@ amf_download_fluxnet(user_id = "kristinariemer",
 unzip("data/AMF_US-xSR_FLUXNET_FULLSET_2017-2021_3-5.zip")
 ```
 
-### Download multiple sites data
+### Download multiple sites data {.unnumbered .unlisted}
 
 This is for all of the Arizona sites, which includes all the sites in Dave's list. Gets list of sites that already have data downloaded (`downloaded_sites`). Then goes through each Arizona site and downloads the data if needed. If only BASE data is available, it returns the message `Cannot find data from [site]`. Downloads the zip file and unzips it. 
 
@@ -113,7 +117,7 @@ for(site in az_sites$SITE_ID){
 }
 ```
 
-### Read in data
+### Read in data {.unnumbered .unlisted}
 
 Single site details
 
@@ -138,7 +142,7 @@ multiple_sites_daily <- map_df(sites_paths, ~read_csv(.x) %>% mutate(file = base
   rename(site = file)
 ```
 
-## Create figures
+## Figures
 
 All plots are for 3 variables: 
 
@@ -146,7 +150,7 @@ All plots are for 3 variables:
 2. RECO_NT_VUT_REF
 3. NEE_VUT_REF
 
-### Entire time series - single site
+### Entire time series (single site)
 
 Lots of ways to smooth time series (i.e., filter)
 
@@ -201,7 +205,7 @@ ggplot(total_ts_nee, aes(x = date_object, y = NEE_VUT_REF)) +
   theme_classic()
 ```
 
-### Average annual time series - single site
+### Average annual time series (single site)
 
 Show average daily values (with standard deviations)
 
@@ -260,7 +264,7 @@ ggplot(nee_by_date, aes(x = date_fake_year, y = nee_mean)) +
 
 ```
 
-### Average annual time series - multiple sites
+### Average annual time series (multiple sites)
 
 Textbook figures: 
 
@@ -310,7 +314,7 @@ ggplot(gpp_by_date_sites, aes(x = date_fake_year, y = nee_mean)) +
     theme_minimal() + 
   scale_x_date(date_labels = "%B")
 ```
-### Daily energy flux - single site
+### Daily energy flux (single site)
 
 Textbook figure: 
 
