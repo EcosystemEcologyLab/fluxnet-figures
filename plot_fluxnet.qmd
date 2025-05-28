@@ -9,8 +9,10 @@ editor: visual
 ## TODO list
 
 - Data
+  - Download data for more sites
 - Plots
   - Scale by number of years for each date
+  - Do all initial plots
 
 ## Prep data
 
@@ -30,6 +32,7 @@ library(amerifluxr)
 library(stringr)
 library(readr)
 library(purrr)
+library(tidyr)
 ```
 
 ### Download site metadata
@@ -307,34 +310,61 @@ ggplot(gpp_by_date_sites, aes(x = date_fake_year, y = nee_mean)) +
     theme_minimal() + 
   scale_x_date(date_labels = "%B")
 ```
-### Daily energy flux
+### Daily energy flux - single site
 
-Textbook figures: 
+Textbook figure: 
 
-![](textbook_figudaily_energy_flux.png)
+![](textbook_figures/daily_energy_flux.png)
 
 Ameriflux variables: 
 
 - NETRAD: Net radiation
-- SW_IN: Shortwave radiation, incoming
+- SW_IN_F: Shortwave radiation, incoming consolidated from SW_IN_F_MDS and SW_IN_ERA (negative values set to zero)
 - SW_OUT: Shortwave radiation, outgoing
-- LW_IN: Longwave radiation, incoming
+- LW_IN_F: Longwave radiation, incoming, consolidated from LW_IN_F_MDS and LW_IN_ERA
 - LW_OUT: Longwave radiation, outgoing
 
+Parsing dates and times: 
+
 ```{r}
-rad_means <- single_site_hourly %>% 
+rad_dt <- single_site_hourly %>% 
   mutate(date_object = ymd_hm(TIMESTAMP_START), 
-         time = format(as.POSIXct(date_object), format = '%H:%M')) %>% 
+         date = date(date_object), 
+         time = format(as.POSIXct(date_object), format = '%H:%M')) 
+```
+
+Show average half-hourly shortwave, longwave, and total radiation for a single site. Data collection starts `{r} min(rad_dt$date)` and ends `{r} max(rad_dt$date)`. 
+
+```{r}
+#| code-fold: true
+
+rad_means <- rad_dt %>% 
   group_by(time) %>% 
-  summarise(rn_mean = mean(NETRAD))
+  summarise(rn_mean = mean(NETRAD), 
+            sw_in_mean = mean(SW_IN_F), 
+            sw_out_mean = mean(SW_OUT), 
+            lw_in_mean = mean(LW_IN_F), 
+            lw_out_mean = mean(LW_OUT)) %>% 
+  pivot_longer(!time, names_to = "energy_flux_var", values_to = "energy_flux_value") %>% 
+  mutate(energy_flux_var = factor(energy_flux_var, levels = c("rn_mean", "sw_in_mean", "sw_out_mean", "lw_in_mean", "lw_out_mean")))
 
-
-ggplot(rad_means, aes(x = time, y = rn_mean)) +
-  geom_point() +
-  labs(x = "Time",
-       y = "Energy flux") +
-  theme_minimal() #+
-  #scale_x_time(breaks = "2 hours")
+ggplot(rad_means, aes(x = time, y = energy_flux_value)) +
+  geom_line(aes(group = energy_flux_var, linetype = energy_flux_var)) +
+  geom_hline(yintercept = 0) +
+  #geom_point() +
+  labs(x = "Time (hr)",
+       y = "Energy flux (W m-2)") +
+  theme_minimal() +
+  scale_x_discrete(breaks = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00")) +
+  scale_linetype_manual(values = c("solid", "dotted", "dotted", "dashed", "dashed"))
 
 ```
 
+::: {.callout-tip}
+## Questions
+
+1. Why does this not really line up with the textbook image? 
+2. There are a few options for shortwave in besides SW_IN_F: SW_IN_POT, SW_IN_F_MDS, SW_IN_ERA. Which of these is the one we want? 
+3. Longwave in also has those options, plus JSB ones
+4. Add standard deviation to these means? 
+:::
