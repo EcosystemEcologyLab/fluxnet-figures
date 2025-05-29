@@ -14,6 +14,7 @@ format:
 
 - Data
   - Download data for more sites
+  - Replace all instances of -9999 with NA
 - Plots
   - Scale by number of years for each date
   - Do all initial plots
@@ -378,6 +379,18 @@ ggplot(rad_means, aes(x = time, y = energy_flux_value)) +
 2. There are a few options for shortwave in besides SW_IN_F: SW_IN_POT, SW_IN_F_MDS, SW_IN_ERA. Which of these is the one we want? 
 3. Longwave in also has those options, plus JSB ones
 4. Add standard deviation to these means? 
+:::
+
+Textbook figure for APAR vs GPP for two sites: 
+
+![](textbook_figures/apar.png)
+
+Show photosynthetically active radiation to GPP. 
+
+::: {.callout-tip}
+# Question
+
+**Which dataset is APAR in?** It's listed in the [data variables page](https://fluxnet.org/data/aboutdata/data-variables/), but not on the [fullset page](https://fluxnet.org/data/fluxnet2015-dataset/fullset-data-product/) or in the single site hourly, daily, or annual datasets. Other **MET_RAD** variables like SW/LW radiation and photon flux density are in those datsets. Also not in BADM. 
 :::
 
 ### Comparison to meteorological variables (multiple sites)
