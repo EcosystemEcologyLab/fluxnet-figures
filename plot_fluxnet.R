@@ -1,0 +1,458 @@
+#' ---
+#' title: "Initial FLUXNET Plots"
+#' author: "Kristina Riemer & Dave Moore"
+#' date: "`r Sys.Date()`"
+#' format:
+#'   html:
+#'     toc: true
+#'     toc-expand: 2
+#'     toc-location: left
+#'     css: styles.css
+#' ---
+#' 
+#' ## TODO list
+#' 
+#' - Data
+#'   - Download data for more sites
+#'   - Replace all instances of -9999 with NA
+#' - Plots
+#'   - Scale by number of years for each date
+#'   - Do all initial plots
+#' 
+#' ## Data
+#' 
+#' ### Read in libraries {.unnumbered .unlisted}
+#' 
+#' ::: {.callout-note}
+#' Need dev version of `amerifluxr` package to get `amf_download_fluxnet` function. 
+#' :::
+#' 
+## --------------------------------------------------
+#| output: false
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+#devtools::install_github("chuhousen/amerifluxr")
+library(amerifluxr)
+library(stringr)
+library(readr)
+library(purrr)
+library(tidyr)
+
+#' 
+#' ### Download site metadata {.unnumbered .unlisted}
+#' 
+#' Showing what metadata is available for a site
+#' 
+## --------------------------------------------------
+site_metadata <- amf_site_info()
+site_metadata %>% 
+  filter(SITE_ID == "US-SRM")
+
+#' Do download setup
+#' 
+#' - Increase timeout because default of one minute isn't enough
+#' 
+## --------------------------------------------------
+if (!dir.exists("data")){
+  dir.create("data")
+}
+
+options(timeout = 600)
+
+#' 
+#' ### Download individual site data {.unnumbered .unlisted}
+#' 
+#' Demonstrating how to use `amf_download_fluxnet` function
+#' 
+## --------------------------------------------------
+#| eval: false
+
+# amf_download_fluxnet(user_id = "kristinariemer",
+#                      user_email = "kristinariemer@arizona.edu",
+#                      site_id = "US-xSR",
+#                      data_product = "FLUXNET",
+#                      data_variant = "FULLSET",
+#                      data_policy = "CCBY4.0",
+#                      agree_policy = TRUE,
+#                      intended_use = "synthesis",
+#                      intended_use_text = "creating pipeline for standardized figures",
+#                      out_dir = "data/")
+# unzip("data/AMF_US-xSR_FLUXNET_FULLSET_2017-2021_3-5.zip")
+
+#' 
+#' ### Download multiple sites data {.unnumbered .unlisted}
+#' 
+#' This is for all of the Arizona sites, which includes all the sites in Dave's list. Gets list of sites that already have data downloaded (`downloaded_sites`). Then goes through each Arizona site and downloads the data if needed. If only BASE data is available, it returns the message `Cannot find data from [site]`. Downloads the zip file and unzips it. 
+#' 
+## --------------------------------------------------
+#| eval: false
+
+# az_sites <- site_metadata %>%
+#   filter(STATE == "AZ")
+# 
+# downloaded_sites <- list.dirs("data") %>%
+#   str_split_i("_", 2)
+# 
+# for(site in az_sites$SITE_ID){
+#   if(!site %in% downloaded_sites){
+#     print(paste0("Downloading data for ", site))
+#     tryCatch({
+#       amf_download_fluxnet(user_id = "kristinariemer",
+#                            user_email = "kristinariemer@arizona.edu",
+#                            site_id = site,
+#                            data_product = "FLUXNET",
+#                            data_variant = "FULLSET",
+#                            data_policy = "CCBY4.0",
+#                            agree_policy = TRUE,
+#                            intended_use = "synthesis",
+#                            intended_use_text = "creating pipeline for standardized figures",
+#                            out_dir = "data/")
+#       zip_path <- Sys.glob(file.path("data", paste0("AMF_", site, "*")))
+#       unzipped_path <- tools::file_path_sans_ext(zip_path)
+#       unzip(zip_path, exdir = unzipped_path)
+#       }, error = function(e){cat("ERROR:",conditionMessage(e), "\n")})
+#     } else {
+#       print(paste0("Data has already been downloaded for ", site))
+#     }
+# }
+
+#' 
+#' ### Read in data {.unnumbered .unlisted}
+#' 
+#' Single site details
+#' 
+#' - Site: [US-SRM](https://ameriflux.lbl.gov/sites/siteinfo/US-SRM) (Santa Rita Mesquite)
+#' - Years: 2004 - 2023
+#' - IGBP: Woody Savannas
+#' 
+## --------------------------------------------------
+single_site_daily <- read.csv("data/AMF_US-SRM_FLUXNET_FULLSET_2004-2023_3-6/AMF_US-SRM_FLUXNET_FULLSET_DD_2004-2023_3-6.csv")
+single_site_hourly <- read.csv("data/AMF_US-SRM_FLUXNET_FULLSET_2004-2023_3-6/AMF_US-SRM_FLUXNET_FULLSET_HH_2004-2023_3-6.csv")
+single_site_annually <- read.csv("data/AMF_US-SRM_FLUXNET_FULLSET_2004-2023_3-6/AMF_US-SRM_FLUXNET_FULLSET_YY_2004-2023_3-6.csv")
+
+#' 
+#' Multiple sites
+#' 
+## --------------------------------------------------
+#| output: false
+
+daily_sites_paths <- list.files(".", pattern = "(FLUXNET_FULLSET_DD)", recursive = TRUE) 
+
+multiple_sites_daily <- map_df(daily_sites_paths, ~read_csv(.x) %>% mutate(file = basename(.x), .before = 1)) %>% 
+  mutate(file = str_split_i(file, "_", 2)) %>% 
+  rename(site = file)
+
+annual_sites_paths <- list.files(".", pattern = "(FLUXNET_FULLSET_YY)", recursive = TRUE) 
+
+multiple_sites_annual <- map_df(annual_sites_paths, ~read_csv(.x) %>% mutate(file = basename(.x), .before = 1)) %>% 
+  mutate(file = str_split_i(file, "_", 2)) %>% 
+  rename(site = file)
+
+#' 
+#' ## Figures
+#' 
+#' Find all variables described on the [FULLSET Data Product page](https://fluxnet.org/data/fluxnet2015-dataset/fullset-data-product/). Plots are generally of 3 variables: 
+#' 
+#' 1. GPP_NT_VUT_REF
+#' 2. RECO_NT_VUT_REF
+#' 3. NEE_VUT_REF
+#' 
+#' ### Entire time series (single site)
+#' 
+#' Lots of ways to smooth time series (i.e., filter)
+#' 
+#' - Simple running mean from [this book chapter](https://cswr.nrhstat.org/timeseries)
+#' - Takes mean of value and (n-1) / 2 values on either side of it
+#' - Bigger window size = more averaging
+#' 
+## --------------------------------------------------
+window_size <- 51
+
+#' 
+## --------------------------------------------------
+#| code-fold: true
+#| warning: false
+
+total_ts_gpp <- single_site_daily %>% 
+  mutate(date_object = ymd(TIMESTAMP), 
+         running_mean_gpp = stats::filter(GPP_NT_VUT_REF, rep(1/window_size, window_size)))
+
+yr_start_dates <- total_ts_gpp %>% 
+  select(date_object) %>% 
+  filter(grepl("-01-01", date_object)) %>% 
+  pull()
+
+ggplot(total_ts_gpp, aes(x = date_object, y = GPP_NT_VUT_REF)) + 
+  geom_point(size = 0.5, color = "darkgrey") +
+  geom_line(aes(y = running_mean_gpp), color = "blue", lwd = 1) +
+  geom_vline(xintercept = yr_start_dates, color = "grey", alpha = 0.5) + 
+  labs(x = "Date", y = "GPP (smoothed)") +
+  theme_classic()
+
+total_ts_reco <- single_site_daily %>% 
+  mutate(date_object = ymd(TIMESTAMP), 
+         running_mean_reco = stats::filter(RECO_NT_VUT_REF, rep(1/window_size, window_size)))
+
+ggplot(total_ts_reco, aes(x = date_object, y = RECO_NT_VUT_REF)) + 
+  geom_point(size = 0.5, color = "darkgrey") +
+  geom_line(aes(y = running_mean_reco), color = "blue", lwd = 1) +
+  geom_vline(xintercept = yr_start_dates, color = "grey", alpha = 0.5) + 
+  labs(x = "Date", y = "RECO (smoothed)") +
+  theme_classic()
+
+total_ts_nee <- single_site_daily %>% 
+  mutate(date_object = ymd(TIMESTAMP), 
+         running_mean_nee = stats::filter(NEE_VUT_REF, rep(1/window_size, window_size)))
+
+ggplot(total_ts_nee, aes(x = date_object, y = NEE_VUT_REF)) + 
+  geom_point(size = 0.5, color = "darkgrey") +
+  geom_line(aes(y = running_mean_nee), color = "blue", lwd = 1) +
+  geom_vline(xintercept = yr_start_dates, color = "grey", alpha = 0.5) + 
+  labs(x = "Date", y = "NEE (smoothed)") +
+  theme_classic()
+
+#' 
+#' ### Average annual time series (single site)
+#' 
+#' Show average daily values (with standard deviations)
+#' 
+## --------------------------------------------------
+#| code-fold: true
+gpp_by_date <- single_site_daily %>% 
+  mutate(date_object = ymd(TIMESTAMP), 
+         date_minus_year = format(date_object, '%m-%d')) %>% 
+  group_by(date_minus_year) %>% 
+  summarize(gpp_mean = mean(GPP_NT_VUT_REF), 
+            gpp_sd = sd(GPP_NT_VUT_REF)) %>% 
+  mutate(date_fake_year = ymd(paste0("2024-", date_minus_year)))
+
+ggplot(gpp_by_date, aes(x = date_fake_year, y = gpp_mean)) +
+  geom_ribbon(aes(ymax = gpp_mean + gpp_sd, ymin = gpp_mean - gpp_sd), 
+              fill = "grey") + 
+    geom_point() +
+    labs(x = "Date",
+         y = "Mean GPP +/- SD") +
+    theme_minimal() + 
+  scale_x_date(date_labels = "%B")
+
+reco_by_date <- single_site_daily %>% 
+  mutate(date_object = ymd(TIMESTAMP), 
+         date_minus_year = format(date_object, '%m-%d')) %>% 
+  group_by(date_minus_year) %>% 
+  summarize(reco_mean = mean(RECO_NT_VUT_REF), 
+            reco_sd = sd(RECO_NT_VUT_REF)) %>% 
+  mutate(date_fake_year = ymd(paste0("2024-", date_minus_year)))
+
+ggplot(reco_by_date, aes(x = date_fake_year, y = reco_mean)) +
+  geom_ribbon(aes(ymax = reco_mean + reco_sd, ymin = reco_mean - reco_sd), 
+              fill = "grey") + 
+    geom_point() +
+    labs(x = "Date",
+         y = "Mean RECO +/- SD") +
+    theme_minimal() + 
+  scale_x_date(date_labels = "%B")
+
+nee_by_date <- single_site_daily %>% 
+  mutate(date_object = ymd(TIMESTAMP), 
+         date_minus_year = format(date_object, '%m-%d')) %>% 
+  group_by(date_minus_year) %>% 
+  summarize(nee_mean = mean(NEE_VUT_REF), 
+            nee_sd = sd(NEE_VUT_REF)) %>% 
+  mutate(date_fake_year = ymd(paste0("2024-", date_minus_year)))
+
+ggplot(nee_by_date, aes(x = date_fake_year, y = nee_mean)) +
+  geom_ribbon(aes(ymax = nee_mean + nee_sd, ymin = nee_mean - nee_sd), 
+              fill = "grey") + 
+    geom_point() +
+    labs(x = "Date",
+         y = "Mean NEE +/- SD") +
+    theme_minimal() + 
+  scale_x_date(date_labels = "%B")
+
+
+#' 
+#' ### Average annual time series (multiple sites)
+#' 
+#' Textbook figures: 
+#' 
+#' ![](textbook_figures/seasonal_gpp_nee.png)
+#' 
+#' 
+#' Show average daily values by site (symbols) and vegetation type (colors)
+#' 
+#' (Something wrong with GPP values for site US-LS2)
+#' 
+## --------------------------------------------------
+#| code-fold: true
+#| warning: false
+
+gpp_by_date_sites <- multiple_sites_daily %>% 
+  mutate(date_object = ymd(TIMESTAMP), 
+         date_minus_year = format(date_object, '%m-%d')) %>% 
+  group_by(site, date_minus_year) %>% 
+  summarize(gpp_mean = mean(GPP_NT_VUT_REF), 
+            gpp_sd = sd(GPP_NT_VUT_REF), 
+            reco_mean = mean(RECO_NT_VUT_REF), 
+            reco_sd = sd(RECO_NT_VUT_REF), 
+            nee_mean = mean(NEE_VUT_REF), 
+            nee_sd = sd(NEE_VUT_REF)) %>% 
+  mutate(date_fake_year = ymd(paste0("2024-", date_minus_year))) %>% 
+  left_join(site_metadata, by = c("site" = "SITE_ID")) %>% 
+  filter(site != "US-LS2")
+
+ggplot(gpp_by_date_sites, aes(x = date_fake_year, y = gpp_mean)) +
+    geom_point(aes(color = IGBP, shape = site)) +
+    labs(x = "Date",
+         y = "Mean GPP") +
+    theme_minimal() + 
+  scale_x_date(date_labels = "%B")
+
+ggplot(gpp_by_date_sites, aes(x = date_fake_year, y = reco_mean)) +
+    geom_point(aes(color = IGBP, shape = site)) +
+    labs(x = "Date",
+         y = "Mean RECO") +
+    theme_minimal() + 
+  scale_x_date(date_labels = "%B")
+
+ggplot(gpp_by_date_sites, aes(x = date_fake_year, y = nee_mean)) +
+    geom_point(aes(color = IGBP, shape = site)) +
+    labs(x = "Date",
+         y = "Mean NEE") +
+    theme_minimal() + 
+  scale_x_date(date_labels = "%B")
+
+#' ### Daily energy flux (single site)
+#' 
+#' Textbook figure: 
+#' 
+#' ![](textbook_figures/daily_energy_flux.png)
+#' 
+#' Ameriflux variables: 
+#' 
+#' - NETRAD: Net radiation
+#' - SW_IN_F: Shortwave radiation, incoming consolidated from SW_IN_F_MDS and SW_IN_ERA (negative values set to zero)
+#' - SW_OUT: Shortwave radiation, outgoing
+#' - LW_IN_F: Longwave radiation, incoming, consolidated from LW_IN_F_MDS and LW_IN_ERA
+#' - LW_OUT: Longwave radiation, outgoing
+#' 
+#' Parsing dates and times: 
+#' 
+## --------------------------------------------------
+rad_dt <- single_site_hourly %>% 
+  mutate(date_object = ymd_hm(TIMESTAMP_START), 
+         date = date(date_object), 
+         time = format(as.POSIXct(date_object), format = '%H:%M')) 
+
+#' 
+#' Show average half-hourly shortwave, longwave, and total radiation for a single site. Data collection starts `{r} min(rad_dt$date)` and ends `{r} max(rad_dt$date)`. 
+#' 
+## --------------------------------------------------
+#| code-fold: true
+
+rad_means <- rad_dt %>% 
+  group_by(time) %>% 
+  summarise(rn_mean = mean(NETRAD), 
+            sw_in_mean = mean(SW_IN_F), 
+            sw_out_mean = mean(SW_OUT), 
+            lw_in_mean = mean(LW_IN_F), 
+            lw_out_mean = mean(LW_OUT)) %>% 
+  pivot_longer(!time, names_to = "energy_flux_var", values_to = "energy_flux_value") %>% 
+  mutate(energy_flux_var = factor(energy_flux_var, levels = c("rn_mean", "sw_in_mean", "sw_out_mean", "lw_in_mean", "lw_out_mean")))
+
+ggplot(rad_means, aes(x = time, y = energy_flux_value)) +
+  geom_line(aes(group = energy_flux_var, linetype = energy_flux_var)) +
+  geom_hline(yintercept = 0) +
+  #geom_point() +
+  labs(x = "Time (hr)",
+       y = "Energy flux (W m-2)") +
+  theme_minimal() +
+  scale_x_discrete(breaks = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00")) +
+  scale_linetype_manual(values = c("solid", "dotted", "dotted", "dashed", "dashed"))
+
+
+#' 
+#' ::: {.callout-tip}
+#' ## Questions
+#' 
+#' 1. Why does this not really line up with the textbook image? 
+#' 2. There are a few options for shortwave in besides SW_IN_F: SW_IN_POT, SW_IN_F_MDS, SW_IN_ERA. Which of these is the one we want? 
+#' 3. Longwave in also has those options, plus JSB ones
+#' 4. Add standard deviation to these means? 
+#' :::
+#' 
+#' ### Comparison to meteorological variables (multiple sites)
+#' 
+#' Textbook figure (for NEE): 
+#' 
+#' ![](textbook_figures/meteo_comp.png)
+#' 
+#' Meteorological variables (bold indicates variable in figures): 
+#' 
+#' 1. P: Precipitation - not in annual datasets
+#' 2. P_ERA: Precipitation, downscaled from ERA, linearly regressed using measured only site data
+#' 3. **P_F**: Precipitation consolidated from P and P_ERA
+#' 4. TA_F_MDS: Air temperature, gapfilled using MDS method
+#' 5. TA_ERA: Air temperature, downscaled from ERA, linearly regressed using measured only site data
+#' 6. **TA_F**: Air temperature, consolidated from TA_F_MDS and TA_ERA
+#' 
+#' Remove site US-LS2 with high negative values
+#' 
+## --------------------------------------------------
+multiple_sites_annual_clean <- multiple_sites_annual %>% 
+  filter(site != "US-LS2")
+
+#' 
+#' Show annual precipitation, summed from daily data, against three main variables annually. 
+#' 
+## --------------------------------------------------
+#| code-fold: true
+
+ggplot(multiple_sites_annual_clean, aes(x = P_F, y = GPP_NT_VUT_REF, color = site)) +
+  geom_point() +
+  labs(x = "Precipitation (mm y-1)", y = "Annual GPP") +
+  theme_minimal()
+
+ggplot(multiple_sites_annual_clean, aes(x = P_F, y = RECO_NT_VUT_REF, color = site)) +
+  geom_point() +
+  labs(x = "Precipitation (mm y-1)", y = "Annual RECO") +
+  theme_minimal()
+
+ggplot(multiple_sites_annual_clean, aes(x = P_F, y = NEE_VUT_REF, color = site)) +
+  geom_point() +
+  labs(x = "Precipitation (mm y-1)", y = "Annual NEE") +
+  theme_minimal()
+
+#' 
+#' Show annual temperature, averaged from daily data, against three main variables annually. 
+#' 
+## --------------------------------------------------
+#| code-fold: true
+
+ggplot(multiple_sites_annual_clean, aes(x = TA_F, y = GPP_NT_VUT_REF, color = site)) +
+  geom_point() +
+  labs(x = "Temperature (C)", y = "Annual GPP") +
+  theme_minimal()
+
+ggplot(multiple_sites_annual_clean, aes(x = TA_F, y = RECO_NT_VUT_REF, color = site)) +
+  geom_point() +
+  labs(x = "Temperature (C)", y = "Annual RECO") +
+  theme_minimal()
+
+ggplot(multiple_sites_annual_clean, aes(x = TA_F, y = NEE_VUT_REF, color = site)) +
+  geom_point() +
+  labs(x = "Temperature (C)", y = "Annual NEE") +
+  theme_minimal()
+
+#' 
+#' ::: {.callout-tip}
+#' ## Questions
+#' 
+#' 1. We want to do this for evapotranspiration; which variable is that in the dataset? 
+#' 2. Do precipitation variable P and temp variable TA_F_MDS come from measured site data? 
+#' :::
+#' 
+#' 
+#' 
+#' 
+#' apar vs gpp (daily?)
