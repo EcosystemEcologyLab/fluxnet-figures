@@ -15,9 +15,11 @@
 #' - Data
 #'   - Download data for more sites
 #'   - Replace all instances of -9999 with NA
+#'   - Automated checking of data ranges? 
 #' - Plots
 #'   - Scale by number of years for each date
 #'   - Do all initial plots
+#'   - Change IGBP codes to definitions
 #' 
 #' ## Data
 #' 
@@ -149,6 +151,7 @@ multiple_sites_annual <- map_df(annual_sites_paths, ~read_csv(.x) %>% mutate(fil
   mutate(file = str_split_i(file, "_", 2)) %>% 
   rename(site = file)
 
+#' Sites currently in the report are: `{r} unique(multiple_sites_daily$site)`
 #' 
 #' ## Figures
 #' 
@@ -328,7 +331,7 @@ ggplot(gpp_by_date_sites, aes(x = date_fake_year, y = nee_mean)) +
 #' 
 #' ![](textbook_figures/daily_energy_flux.png)
 #' 
-#' Ameriflux variables: 
+#' Energy flux variables: 
 #' 
 #' - NETRAD: Net radiation
 #' - SW_IN_F: Shortwave radiation, incoming consolidated from SW_IN_F_MDS and SW_IN_ERA (negative values set to zero)
@@ -379,6 +382,18 @@ ggplot(rad_means, aes(x = time, y = energy_flux_value)) +
 #' 2. There are a few options for shortwave in besides SW_IN_F: SW_IN_POT, SW_IN_F_MDS, SW_IN_ERA. Which of these is the one we want? 
 #' 3. Longwave in also has those options, plus JSB ones
 #' 4. Add standard deviation to these means? 
+#' :::
+#' 
+#' Textbook figure for APAR vs GPP for two sites: 
+#' 
+#' ![](textbook_figures/apar.png)
+#' 
+#' Show photosynthetically active radiation to GPP. 
+#' 
+#' ::: {.callout-tip}
+#' # Question
+#' 
+#' **Which dataset is APAR in?** It's listed in the [data variables page](https://fluxnet.org/data/aboutdata/data-variables/), but not on the [fullset page](https://fluxnet.org/data/fluxnet2015-dataset/fullset-data-product/) or in the single site hourly, daily, or annual datasets. Other **MET_RAD** variables like SW/LW radiation and photon flux density are in those datsets. Also not in BADM. 
 #' :::
 #' 
 #' ### Comparison to meteorological variables (multiple sites)
@@ -452,7 +467,71 @@ ggplot(multiple_sites_annual_clean, aes(x = TA_F, y = NEE_VUT_REF, color = site)
 #' 2. Do precipitation variable P and temp variable TA_F_MDS come from measured site data? 
 #' :::
 #' 
+#' ### Bowen ratios
+#' 
+#' Textbook figure: 
+#' 
+#' ![](textbook_figures/bowen_ratios.png)
+#' 
+#' Heat flux variables (bold indicates variable in figures): 
+#' 
+#' - **H_F_MDS**: Sensible heat flux, gapfilled using MDS method (W m-2)
+#' - H_CORR (H_CORR_25, H_CORR_75): Sensible heat flux, corrected H_F_MDS by energy balance closure correction factor (25th and 75th percentile) 
+#' - **LE_F_MDS**: Latent heat flux, gapfilled using MDS method
+#' - LE_CORR (LE_CORR_25, LE_CORR_75): Latent heat flux, corrected LE_F_MDS by energy balance closure correction factor (25th and 75th percentile) 
 #' 
 #' 
+#' Visual check of heat flux variable ranges. 
+## --------------------------------------------------
+#| message: false
+ggplot(multiple_sites_daily, aes(x = LE_F_MDS)) +
+  geom_histogram() +
+  facet_wrap(~site)
+
+ggplot(multiple_sites_daily, aes(x = H_F_MDS)) +
+  geom_histogram() +
+  facet_wrap(~site)
+
 #' 
-#' apar vs gpp (daily?)
+#' Show average daily summer-only sensible vs latent heat flux (i.e., Bowen ratio) for multiple sites with different vegetation types. Bowen ratios of 3, 2, 1, 0.5, and 0.25 shown by dotted lines. 
+#' 
+## --------------------------------------------------
+#| code-fold: true
+
+multiple_sites_flux <- multiple_sites_daily %>% 
+  mutate(date_object = ymd(TIMESTAMP), .before = 1, 
+         month = format(date_object, '%m')) %>% 
+  filter(month %in% c("06", "07", "08")) %>% 
+  group_by(site) %>% 
+  summarize(latent_heat_flux = mean(LE_F_MDS), 
+            sensible_heat_flux = mean(H_F_MDS)) %>% 
+  left_join(site_metadata, by = c("site" = "SITE_ID"))
+
+upper_axis_limit <- pmax(max(multiple_sites_flux$sensible_heat_flux), max(multiple_sites_flux$latent_heat_flux)) + 10
+
+ggplot(multiple_sites_flux, aes(x = latent_heat_flux, y = sensible_heat_flux, color = IGBP)) +
+  geom_point(size = 3) +
+  geom_abline(slope = 0.25, linetype = "dotted", color = "darkgrey") +
+  geom_abline(slope = 0.5, linetype = "dotted", color = "darkgrey") +
+  geom_abline(slope = 1, linetype = "dotted", color = "darkgrey") +
+  geom_abline(slope = 2, linetype = "dotted", color = "darkgrey") +
+  geom_abline(slope = 3, linetype = "dotted", color = "darkgrey") +
+  labs(x = "Latent Heat Flux (W m-2)", y = "Sensible Heat Flux (W m-2)") +
+  theme_classic() +
+  guides(x.sec = "axis", y.sec = "axis") +
+  theme(axis.ticks.x.top = element_blank(), 
+        axis.text.x.top = element_blank(), 
+        axis.ticks.y.right = element_blank(), 
+        axis.text.y.right = element_blank()) + 
+  scale_x_continuous(expand = c(0, 0), limits = c(0, upper_axis_limit)) + 
+  scale_y_continuous(expand = c(0, 0), limits = c(0, upper_axis_limit))
+
+
+
+#' ::: {.callout-tip}
+#' ## Questions
+#' 
+#' 1. Should watts be converted to megajoules for the heat flux variables? 
+#' 2. Are heat flux values expected to be negative, especially for sensible heat flux? 
+#' 
+#' :::
