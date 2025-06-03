@@ -19,6 +19,8 @@ format:
   - Scale by number of years for each date
   - Do all initial plots
   - Change IGBP codes to definitions
+  - Add overall trend line to interannual met variability plots
+  - Facet all figures for interannual met variability
 
 ## Data
 
@@ -484,6 +486,85 @@ ggplot(multiple_sites_annual, aes(x = TA_F, y = NEE_VUT_REF, color = site)) +
 
 1. We want to do this for evapotranspiration; which variable is that in the dataset? 
 2. Do precipitation variable P and temp variable TA_F_MDS come from measured site data? 
+3. We could get some measure of variability for x- (temp and precip) and y- (GPP, RECO, NEE) axes by using the daily or monthly values instead; would that be of interest? 
+:::
+
+### Interannual comparison to meteorological variables (multiple sites)
+
+Textbook figure (for NPP): 
+
+![](textbook_figures/interannual_meteo_comp.png)
+
+Organize data to get min and max annual values for two meteorological and three product variables. 
+
+```{r}
+interannual_met <- multiple_sites_annual %>% 
+  group_by(site) %>% 
+  summarize(min_precip = min(P_F), 
+            max_precip = max(P_F), 
+            min_temp = min(TA_F), 
+            max_temp = max(TA_F), 
+            min_gpp = min(GPP_NT_VUT_REF), 
+            max_gpp = max(GPP_NT_VUT_REF), 
+            min_reco = min(RECO_NT_VUT_REF), 
+            max_reco = max(RECO_NT_VUT_REF), 
+            min_nee = min(NEE_VUT_REF), 
+            max_nee = max(NEE_VUT_REF)) %>% 
+  pivot_longer(cols = -site, names_to = c("min_or_max", ".value"), names_sep = "_")
+```
+
+Show minimum and maximum interannual precipitation compared to min and max interannual GPP/RECO/NEE. 
+
+```{r}
+#| code-fold: true
+#| warning: false
+
+ggplot(interannual_met, aes(x = precip, y = gpp, group = site, color = site)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Precipitation (mm y-1)", y = "Annual GPP") +
+  theme_minimal()
+
+ggplot(interannual_met, aes(x = precip, y = reco, group = site, color = site)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Precipitation (mm y-1)", y = "Annual RECO") +
+  theme_minimal()
+
+ggplot(interannual_met, aes(x = precip, y = nee, group = site, color = site)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Precipitation (mm y-1)", y = "Annual NEE") +
+  theme_minimal()
+```
+Show minimum and maximum interannual temperature compared to min and max interannual GPP/RECO/NEE. 
+
+```{r}
+#| code-fold: true
+#| warning: false
+
+ggplot(interannual_met, aes(x = temp, y = gpp, group = site, color = site)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Precipitation (mm y-1)", y = "Annual GPP") +
+  theme_minimal()
+
+ggplot(interannual_met, aes(x = temp, y = reco, group = site, color = site)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Precipitation (mm y-1)", y = "Annual RECO") +
+  theme_minimal()
+
+ggplot(interannual_met, aes(x = temp, y = nee, group = site, color = site)) +
+  geom_point() +
+  geom_line() +
+  labs(x = "Precipitation (mm y-1)", y = "Annual NEE") +
+  theme_minimal()
+```
+::: {.callout-tip}
+## Question
+
+1. These figures match up the lowest annual meteorological variable with the lowest product variable for each site, with the highest. Is that what the textbook figure is displaying? 
 :::
 
 ### Bowen ratios
