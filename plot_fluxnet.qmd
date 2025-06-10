@@ -495,7 +495,7 @@ Textbook figure (for NPP):
 
 ![](textbook_figures/interannual_meteo_comp.png)
 
-Organize data to get min and max annual values for two meteorological and three product variables. 
+Organize data to get min and max annual values for two meteorological and three product variables. Then further reorganize data to get all plots into single figure. 
 
 ```{r}
 interannual_met <- multiple_sites_annual %>% 
@@ -511,60 +511,52 @@ interannual_met <- multiple_sites_annual %>%
             min_nee = min(NEE_VUT_REF), 
             max_nee = max(NEE_VUT_REF)) %>% 
   pivot_longer(cols = -site, names_to = c("min_or_max", ".value"), names_sep = "_")
+
+interannual_met_pairs <- interannual_met %>% 
+  mutate(precip2 = precip, 
+         precip3 = precip, 
+         temp2 = temp, 
+         temp3 = temp, 
+         gpp2 = gpp, 
+         reco2 = reco, 
+         nee2 = nee) %>% 
+  rename(precipgpp_mvvalue = precip, precipgpp_pvvalue = gpp, 
+         preciprec_mvvalue = precip2, preciprec_pvvalue = reco, 
+         precipnee_mvvalue = precip3, precipnee_pvvalue = nee, 
+         tempergpp_mvvalue = temp, tempergpp_pvvalue = gpp2, 
+         temperrec_mvvalue = temp2, temperrec_pvvalue = reco2, 
+         tempernee_mvvalue = temp3, tempernee_pvvalue = nee2) %>% 
+  pivot_longer(!c(site, min_or_max), names_to = c("pairs", ".value"), 
+               names_sep = "_") %>% 
+  separate_wider_position(pairs, widths = c(met_var = 6, pro_var = 3)) %>% 
+  rename(mv_value = mvvalue, pv_value = pvvalue) %>% 
+  mutate(met_var = as.factor(met_var), 
+         met_label = factor(met_var, labels = c("Precipitation (mm y-1)", 
+                                                "Temperature (C)")), 
+         pro_var = factor(pro_var, labels = c("gpp", "rec", "nee")), 
+         pro_label = factor(pro_var, labels = c("Annual GPP", 
+                                                "Annual RECO", 
+                                                "Annual NEE")))
 ```
 
-Show minimum and maximum interannual precipitation compared to min and max interannual GPP/RECO/NEE. 
+Show minimum and maximum interannual precipitation/temperature compared to min and max interannual GPP/RECO/NEE. 
 
 ```{r}
 #| code-fold: true
 #| warning: false
 
-ggplot(interannual_met, aes(x = precip, y = gpp, group = site, color = site)) +
+ggplot(interannual_met_pairs, aes(x = mv_value, y = pv_value, group = site, color = site)) +
   geom_point() +
   geom_line() +
-  labs(x = "Precipitation (mm y-1)", y = "Annual GPP") +
-  theme_minimal()
-
-ggplot(interannual_met, aes(x = precip, y = reco, group = site, color = site)) +
-  geom_point() +
-  geom_line() +
-  labs(x = "Precipitation (mm y-1)", y = "Annual RECO") +
-  theme_minimal()
-
-ggplot(interannual_met, aes(x = precip, y = nee, group = site, color = site)) +
-  geom_point() +
-  geom_line() +
-  labs(x = "Precipitation (mm y-1)", y = "Annual NEE") +
-  theme_minimal()
+  facet_grid(rows = vars(pro_label), cols = vars(met_label), scales = "free") +
+  labs(x = "", y = "")
 ```
-Show minimum and maximum interannual temperature compared to min and max interannual GPP/RECO/NEE. 
 
-```{r}
-#| code-fold: true
-#| warning: false
-
-ggplot(interannual_met, aes(x = temp, y = gpp, group = site, color = site)) +
-  geom_point() +
-  geom_line() +
-  labs(x = "Precipitation (mm y-1)", y = "Annual GPP") +
-  theme_minimal()
-
-ggplot(interannual_met, aes(x = temp, y = reco, group = site, color = site)) +
-  geom_point() +
-  geom_line() +
-  labs(x = "Precipitation (mm y-1)", y = "Annual RECO") +
-  theme_minimal()
-
-ggplot(interannual_met, aes(x = temp, y = nee, group = site, color = site)) +
-  geom_point() +
-  geom_line() +
-  labs(x = "Precipitation (mm y-1)", y = "Annual NEE") +
-  theme_minimal()
-```
 ::: {.callout-tip}
 ## Question
 
 1. These figures match up the lowest annual meteorological variable with the lowest product variable for each site, with the highest. Is that what the textbook figure is displaying? 
+2. There is no trend line because there doesn't really seem to be a trend here. One might emerge once we add more sites? 
 :::
 
 ### Bowen ratios
