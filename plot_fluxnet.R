@@ -23,31 +23,43 @@
 #'   - Facet all figures for interannual met variability
 #' 
 #' ## Data
+#' ### Install libraries {.unnumbered .unlisted}
 #' 
-#' ### Read in libraries {.unnumbered .unlisted}
+#' These are not on CRAN so require downloading directly from their GitHub repos using `devtools`. This code chunk only needs to be run once (in a while) and it could take a while depending on if you choose to update all the dependencies. 
 #' 
 #' ::: {.callout-note}
 #' Need dev version of `amerifluxr` package to get `amf_download_fluxnet` function. 
 #' :::
 #' 
-## ------------------------------------------------------
+## -------------------------------------------------
+#| eval: false
+
+# devtools::install_github("chuhousen/amerifluxr")
+# devtools::install_github("valentinitnelav/plotbiomes")
+
+#' 
+#' ### Read in libraries {.unnumbered .unlisted}
+#' 
+## -------------------------------------------------
 #| output: false
 library(dplyr)
 library(lubridate)
 library(ggplot2)
-#devtools::install_github("chuhousen/amerifluxr")
 library(amerifluxr)
 library(stringr)
 library(readr)
 library(purrr)
 library(tidyr)
+library(plotbiomes)
+library(measurements)
+library(ggnewscale)
 
 #' 
 #' ### Download site metadata {.unnumbered .unlisted}
 #' 
 #' Showing what metadata is available for a site
 #' 
-## ------------------------------------------------------
+## -------------------------------------------------
 site_metadata <- amf_site_info()
 site_metadata %>% 
   filter(SITE_ID == "US-SRM")
@@ -56,7 +68,7 @@ site_metadata %>%
 #' 
 #' - Increase timeout because default of one minute isn't enough
 #' 
-## ------------------------------------------------------
+## -------------------------------------------------
 if (!dir.exists("data")){
   dir.create("data")
 }
@@ -68,7 +80,7 @@ options(timeout = 600)
 #' 
 #' Demonstrating how to use `amf_download_fluxnet` function
 #' 
-## ------------------------------------------------------
+## -------------------------------------------------
 #| eval: false
 
 # amf_download_fluxnet(user_id = "kristinariemer",
@@ -88,7 +100,7 @@ options(timeout = 600)
 #' 
 #' This is for all of the Arizona sites, which includes all the sites in Dave's list. Gets list of sites that already have data downloaded (`downloaded_sites`). Then goes through each Arizona site and downloads the data if needed. If only BASE data is available, it returns the message `Cannot find data from [site]`. Downloads the zip file and unzips it. 
 #' 
-## ------------------------------------------------------
+## -------------------------------------------------
 #| eval: false
 
 # az_sites <- site_metadata %>%
@@ -129,7 +141,7 @@ options(timeout = 600)
 #' - Years: 2004 - 2023
 #' - IGBP: Woody Savannas
 #' 
-## ------------------------------------------------------
+## -------------------------------------------------
 single_site_daily <- read.csv("data/AMF_US-SRM_FLUXNET_FULLSET_2004-2023_3-6/AMF_US-SRM_FLUXNET_FULLSET_DD_2004-2023_3-6.csv")
 single_site_hourly <- read.csv("data/AMF_US-SRM_FLUXNET_FULLSET_2004-2023_3-6/AMF_US-SRM_FLUXNET_FULLSET_HH_2004-2023_3-6.csv")
 single_site_annually <- read.csv("data/AMF_US-SRM_FLUXNET_FULLSET_2004-2023_3-6/AMF_US-SRM_FLUXNET_FULLSET_YY_2004-2023_3-6.csv")
@@ -139,7 +151,7 @@ single_site_annually <- read.csv("data/AMF_US-SRM_FLUXNET_FULLSET_2004-2023_3-6/
 #' 
 #' They used many different variants of -9999 to represent null values. 
 #' 
-## ------------------------------------------------------
+## -------------------------------------------------
 #| output: false
 
 daily_sites_paths <- list.files(".", pattern = "(FLUXNET_FULLSET_DD)", recursive = TRUE) 
@@ -159,7 +171,7 @@ multiple_sites_annual <- map_df(annual_sites_paths, ~read_csv(.x) %>% mutate(fil
 #' 
 #' Null values in FLUXNET are indicated by some variation of -9999 (-9999.x, where x can be multiple values of 0 or 9). See **Missing data** section on [Data Variables page](https://fluxnet.org/data/aboutdata/data-variables/). Returning datasets for daily and annual data that contain these NA values and then remove them from the datasets. 
 #' 
-## ------------------------------------------------------
+## -------------------------------------------------
 #| warning: false
 cols_to_check <- c("GPP_NT_VUT_REF", "RECO_NT_VUT_REF", "NEE_VUT_REF", "LE_F_MDS", "H_F_MDS")
 
@@ -196,11 +208,11 @@ multiple_sites_daily <- multiple_sites_daily %>%
 #' - Takes mean of value and (n-1) / 2 values on either side of it
 #' - Bigger window size = more averaging
 #' 
-## ------------------------------------------------------
+## -------------------------------------------------
 window_size <- 51
 
 #' 
-## ------------------------------------------------------
+## -------------------------------------------------
 #| code-fold: true
 #| warning: false
 
@@ -247,7 +259,7 @@ ggplot(total_ts_nee, aes(x = date_object, y = NEE_VUT_REF)) +
 #' 
 #' Show average daily values (with standard deviations)
 #' 
-## ------------------------------------------------------
+## -------------------------------------------------
 #| code-fold: true
 gpp_by_date <- single_site_daily %>% 
   mutate(date_object = ymd(TIMESTAMP), 
@@ -310,7 +322,7 @@ ggplot(nee_by_date, aes(x = date_fake_year, y = nee_mean)) +
 #' 
 #' Show average daily values by site (symbols) and vegetation type (colors)
 #' 
-## ------------------------------------------------------
+## -------------------------------------------------
 #| code-fold: true
 #| warning: false
 
@@ -367,7 +379,7 @@ ggplot(gpp_by_date_sites, aes(x = date_fake_year, y = nee_mean)) +
 #' 
 #' Parsing dates and times: 
 #' 
-## ------------------------------------------------------
+## -------------------------------------------------
 rad_dt <- single_site_hourly %>% 
   mutate(date_object = ymd_hm(TIMESTAMP_START), 
          date = date(date_object), 
@@ -376,7 +388,7 @@ rad_dt <- single_site_hourly %>%
 #' 
 #' Show average half-hourly shortwave, longwave, and total radiation for a single site. Data collection starts `{r} min(rad_dt$date)` and ends `{r} max(rad_dt$date)`. 
 #' 
-## ------------------------------------------------------
+## -------------------------------------------------
 #| code-fold: true
 
 rad_means <- rad_dt %>% 
@@ -439,7 +451,7 @@ ggplot(rad_means, aes(x = time, y = energy_flux_value)) +
 #' 
 #' Show annual precipitation, summed from daily data, against three main variables annually. 
 #' 
-## ------------------------------------------------------
+## -------------------------------------------------
 #| code-fold: true
 #| warning: false
 
@@ -461,7 +473,7 @@ ggplot(multiple_sites_annual, aes(x = P_F, y = NEE_VUT_REF, color = site)) +
 #' 
 #' Show annual temperature, averaged from daily data, against three main variables annually. 
 #' 
-## ------------------------------------------------------
+## -------------------------------------------------
 #| code-fold: true
 #| warning: false
 
@@ -495,9 +507,9 @@ ggplot(multiple_sites_annual, aes(x = TA_F, y = NEE_VUT_REF, color = site)) +
 #' 
 #' ![](textbook_figures/interannual_meteo_comp.png)
 #' 
-#' Organize data to get min and max annual values for two meteorological and three product variables. 
+#' Organize data to get min and max annual values for two meteorological and three product variables. Then further reorganize data to get all plots into single figure. 
 #' 
-## ------------------------------------------------------
+## -------------------------------------------------
 interannual_met <- multiple_sites_annual %>% 
   group_by(site) %>% 
   summarize(min_precip = min(P_F), 
@@ -512,59 +524,51 @@ interannual_met <- multiple_sites_annual %>%
             max_nee = max(NEE_VUT_REF)) %>% 
   pivot_longer(cols = -site, names_to = c("min_or_max", ".value"), names_sep = "_")
 
+interannual_met_pairs <- interannual_met %>% 
+  mutate(precip2 = precip, 
+         precip3 = precip, 
+         temp2 = temp, 
+         temp3 = temp, 
+         gpp2 = gpp, 
+         reco2 = reco, 
+         nee2 = nee) %>% 
+  rename(precipgpp_mvvalue = precip, precipgpp_pvvalue = gpp, 
+         preciprec_mvvalue = precip2, preciprec_pvvalue = reco, 
+         precipnee_mvvalue = precip3, precipnee_pvvalue = nee, 
+         tempergpp_mvvalue = temp, tempergpp_pvvalue = gpp2, 
+         temperrec_mvvalue = temp2, temperrec_pvvalue = reco2, 
+         tempernee_mvvalue = temp3, tempernee_pvvalue = nee2) %>% 
+  pivot_longer(!c(site, min_or_max), names_to = c("pairs", ".value"), 
+               names_sep = "_") %>% 
+  separate_wider_position(pairs, widths = c(met_var = 6, pro_var = 3)) %>% 
+  rename(mv_value = mvvalue, pv_value = pvvalue) %>% 
+  mutate(met_var = as.factor(met_var), 
+         met_label = factor(met_var, labels = c("Precipitation (mm y-1)", 
+                                                "Temperature (C)")), 
+         pro_var = factor(pro_var, labels = c("gpp", "rec", "nee")), 
+         pro_label = factor(pro_var, labels = c("Annual GPP", 
+                                                "Annual RECO", 
+                                                "Annual NEE")))
+
 #' 
-#' Show minimum and maximum interannual precipitation compared to min and max interannual GPP/RECO/NEE. 
+#' Show minimum and maximum interannual precipitation/temperature compared to min and max interannual GPP/RECO/NEE. 
 #' 
-## ------------------------------------------------------
+## -------------------------------------------------
 #| code-fold: true
 #| warning: false
 
-ggplot(interannual_met, aes(x = precip, y = gpp, group = site, color = site)) +
+ggplot(interannual_met_pairs, aes(x = mv_value, y = pv_value, group = site, color = site)) +
   geom_point() +
   geom_line() +
-  labs(x = "Precipitation (mm y-1)", y = "Annual GPP") +
-  theme_minimal()
+  facet_grid(rows = vars(pro_label), cols = vars(met_label), scales = "free") +
+  labs(x = "", y = "")
 
-ggplot(interannual_met, aes(x = precip, y = reco, group = site, color = site)) +
-  geom_point() +
-  geom_line() +
-  labs(x = "Precipitation (mm y-1)", y = "Annual RECO") +
-  theme_minimal()
-
-ggplot(interannual_met, aes(x = precip, y = nee, group = site, color = site)) +
-  geom_point() +
-  geom_line() +
-  labs(x = "Precipitation (mm y-1)", y = "Annual NEE") +
-  theme_minimal()
-
-#' Show minimum and maximum interannual temperature compared to min and max interannual GPP/RECO/NEE. 
 #' 
-## ------------------------------------------------------
-#| code-fold: true
-#| warning: false
-
-ggplot(interannual_met, aes(x = temp, y = gpp, group = site, color = site)) +
-  geom_point() +
-  geom_line() +
-  labs(x = "Precipitation (mm y-1)", y = "Annual GPP") +
-  theme_minimal()
-
-ggplot(interannual_met, aes(x = temp, y = reco, group = site, color = site)) +
-  geom_point() +
-  geom_line() +
-  labs(x = "Precipitation (mm y-1)", y = "Annual RECO") +
-  theme_minimal()
-
-ggplot(interannual_met, aes(x = temp, y = nee, group = site, color = site)) +
-  geom_point() +
-  geom_line() +
-  labs(x = "Precipitation (mm y-1)", y = "Annual NEE") +
-  theme_minimal()
-
 #' ::: {.callout-tip}
 #' ## Question
 #' 
 #' 1. These figures match up the lowest annual meteorological variable with the lowest product variable for each site, with the highest. Is that what the textbook figure is displaying? 
+#' 2. There is no trend line because there doesn't really seem to be a trend here. One might emerge once we add more sites? 
 #' :::
 #' 
 #' ### Bowen ratios
@@ -582,7 +586,7 @@ ggplot(interannual_met, aes(x = temp, y = nee, group = site, color = site)) +
 #' 
 #' 
 #' Visual check of heat flux variable ranges. 
-## ------------------------------------------------------
+## -------------------------------------------------
 #| message: false
 ggplot(multiple_sites_daily, aes(x = LE_F_MDS)) +
   geom_histogram() +
@@ -595,7 +599,7 @@ ggplot(multiple_sites_daily, aes(x = H_F_MDS)) +
 #' 
 #' Show average daily summer-only sensible vs latent heat flux (i.e., Bowen ratio) for multiple sites with different vegetation types. Bowen ratios of 3, 2, 1, 0.5, and 0.25 shown by dotted lines. 
 #' 
-## ------------------------------------------------------
+## -------------------------------------------------
 #| code-fold: true
 
 multiple_sites_flux <- multiple_sites_daily %>% 
@@ -628,10 +632,55 @@ ggplot(multiple_sites_flux, aes(x = latent_heat_flux, y = sensible_heat_flux, co
 
 
 
+#' 
 #' ::: {.callout-tip}
 #' ## Questions
 #' 
 #' 1. Should watts be converted to megajoules for the heat flux variables? 
 #' 2. Are heat flux values expected to be negative, especially for sensible heat flux? 
+#' :::
 #' 
+#' ### Biome plot
+#' 
+#' Textbook figure: 
+#' 
+#' ![](textbook_figures/biomes.png)
+#' 
+#' The R package [`plotbiomes`](https://github.com/valentinitnelav/plotbiomes) can be used to recreate the base plot here, which is referred to as a [Whittaker plot](https://en.wikipedia.org/wiki/Biome#Whittaker_(1962,_1970,_1975)_biome-types). It includes a dataset of temperature, precipitation, and associated biome. 
+#' 
+## -------------------------------------------------
+data("Whittaker_biomes")
+head(Whittaker_biomes)
+unique(Whittaker_biomes$biome)
+
+#' 
+#' Get mean values of annual precipitation (P_F) and temperature (TA_F) for each site, and convert precipitation to match Whittaker dataset units (mm/yr to cm/yr). 
+#' 
+## -------------------------------------------------
+whittaker_format <- multiple_sites_annual %>% 
+  group_by(site) %>% 
+  summarize(mean_precip = mean(P_F), 
+            mean_temp = mean(TA_F)) %>% 
+  mutate(mean_precip_cm = conv_unit(mean_precip, "mm", "cm")) %>% 
+  left_join(site_metadata, by = c("site" = "SITE_ID"))
+
+#' 
+#' Show mean annual precipitation and temperature of each site over Whittaker biome. 
+#' 
+## -------------------------------------------------
+#| code-fold: true
+
+ggplot() +
+  geom_polygon(data = Whittaker_biomes, aes(x = temp_c, y = precp_cm, color = biome), fill = "white") +
+  scale_color_brewer(palette = "BrBG") +
+  new_scale_color() +
+  geom_point(data = whittaker_format, aes(x = mean_temp, y = mean_precip_cm, color = IGBP)) +
+  scale_color_brewer(palette = "Set1") +
+  labs(x = "Temperature (C)", y = "Precipitation (cm y-1)") +
+  theme_classic()
+
+#' ::: {.callout-tip}
+#' ## Questions
+#' 
+#' 1. What to do with the plot colors? We could match IGBP colors to biome colors. Or make the biome colors represent their type, e.g., tan for desert, green for rain forest. Or turn the biome types into labels like the original figure. Lots of options here...
 #' :::
