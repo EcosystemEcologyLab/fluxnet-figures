@@ -255,6 +255,43 @@ ggplot(total_ts_nee, aes(x = date_object, y = NEE_VUT_REF)) +
   theme_classic()
 ```
 
+### Entire time series (multiple sites)
+
+Same smoother as used for single site. 
+
+```{r}
+total_ts_ms_gpp <- multiple_sites_daily %>% 
+  mutate(date_object = ymd(TIMESTAMP)) %>% 
+  left_join(site_metadata, by = c("site" = "SITE_ID")) %>% 
+  group_by(site) %>% 
+  mutate(running_mean_gpp = stats::filter(GPP_NT_VUT_REF, rep(1/window_size, window_size)))
+
+yr_start_dates_ms <- total_ts_ms_gpp %>% 
+  select(date_object) %>% 
+  filter(grepl("-01-01", date_object)) %>% 
+  pull()
+```
+
+Show entire time series of 
+
+```{r}
+ggplot(total_ts_ms_gpp, aes(x = date_object, y = GPP_NT_VUT_REF, color = site)) + 
+  geom_point(size = 0.1, alpha = 0.1) +
+  geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+  facet_grid(vars(IGBP)) + 
+  labs(x = "Date", y = "GPP") +
+  theme_classic() + 
+  theme(panel.background = element_rect(color = "black"))
+
+ggplot(total_ts_ms_gpp, aes(x = date_object, y = running_mean_gpp, color = site)) +
+  geom_line(lwd = 0.5, alpha = 0.7) +
+  geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+  facet_grid(vars(IGBP)) + 
+  labs(x = "Date", y = "GPP (smoothed)") +
+  theme_classic() + 
+  theme(panel.background = element_rect(color = "black"))
+```
+
 ### Average annual time series (single site)
 
 Show average daily values (with standard deviations)
