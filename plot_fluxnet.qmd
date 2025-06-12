@@ -363,76 +363,6 @@ ggplot(gpp_by_date_sites, aes(x = date_fake_year, y = nee_mean)) +
   scale_x_date(date_labels = "%B") +
   scale_shape_manual(values = 1:length(unique(gpp_by_date_sites$site)))
 ```
-### Daily energy flux (single site)
-
-Textbook figure: 
-
-![](textbook_figures/daily_energy_flux.png)
-
-Energy flux variables: 
-
-- NETRAD: Net radiation
-- SW_IN_F: Shortwave radiation, incoming consolidated from SW_IN_F_MDS and SW_IN_ERA (negative values set to zero)
-- SW_OUT: Shortwave radiation, outgoing
-- LW_IN_F: Longwave radiation, incoming, consolidated from LW_IN_F_MDS and LW_IN_ERA
-- LW_OUT: Longwave radiation, outgoing
-
-Parsing dates and times: 
-
-```{r}
-rad_dt <- single_site_hourly %>% 
-  mutate(date_object = ymd_hm(TIMESTAMP_START), 
-         date = date(date_object), 
-         time = format(as.POSIXct(date_object), format = '%H:%M')) 
-```
-
-Show average half-hourly shortwave, longwave, and total radiation for a single site. Data collection starts `{r} min(rad_dt$date)` and ends `{r} max(rad_dt$date)`. 
-
-```{r}
-#| code-fold: true
-
-rad_means <- rad_dt %>% 
-  group_by(time) %>% 
-  summarise(rn_mean = mean(NETRAD), 
-            sw_in_mean = mean(SW_IN_F), 
-            sw_out_mean = mean(SW_OUT), 
-            lw_in_mean = mean(LW_IN_F), 
-            lw_out_mean = mean(LW_OUT)) %>% 
-  pivot_longer(!time, names_to = "energy_flux_var", values_to = "energy_flux_value") %>% 
-  mutate(energy_flux_var = factor(energy_flux_var, levels = c("rn_mean", "sw_in_mean", "sw_out_mean", "lw_in_mean", "lw_out_mean")))
-
-ggplot(rad_means, aes(x = time, y = energy_flux_value)) +
-  geom_line(aes(group = energy_flux_var, linetype = energy_flux_var)) +
-  geom_hline(yintercept = 0) +
-  #geom_point() +
-  labs(x = "Time (hr)",
-       y = "Energy flux (W m-2)") +
-  theme_minimal() +
-  scale_x_discrete(breaks = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00")) +
-  scale_linetype_manual(values = c("solid", "dotted", "dotted", "dashed", "dashed"))
-
-```
-
-::: {.callout-tip}
-## Questions
-
-1. Why does this not really line up with the textbook image? 
-2. There are a few options for shortwave in besides SW_IN_F: SW_IN_POT, SW_IN_F_MDS, SW_IN_ERA. Which of these is the one we want? 
-3. Longwave in also has those options, plus JSB ones
-4. Add standard deviation to these means? 
-:::
-
-Textbook figure for APAR vs GPP for two sites: 
-
-![](textbook_figures/apar.png)
-
-Show photosynthetically active radiation to GPP. 
-
-::: {.callout-tip}
-# Question
-
-**Which dataset is APAR in?** It's listed in the [data variables page](https://fluxnet.org/data/aboutdata/data-variables/), but not on the [fullset page](https://fluxnet.org/data/fluxnet2015-dataset/fullset-data-product/) or in the single site hourly, daily, or annual datasets. Other **MET_RAD** variables like SW/LW radiation and photon flux density are in those datsets. Also not in BADM. 
-:::
 
 ### Comparison to meteorological variables (multiple sites)
 
@@ -636,7 +566,7 @@ ggplot(multiple_sites_flux, aes(x = latent_heat_flux, y = sensible_heat_flux, co
 ::: {.callout-tip}
 ## Questions
 
-1. Should watts be converted to megajoules for the heat flux variables? 
+1. Should watts be converted to megajoules for the heat flux variables? *No, people will be more likely to expect Wm-2*
 2. Are heat flux values expected to be negative, especially for sensible heat flux? 
 :::
 
@@ -683,4 +613,75 @@ ggplot() +
 ## Questions
 
 1. What to do with the plot colors? We could match IGBP colors to biome colors. Or make the biome colors represent their type, e.g., tan for desert, green for rain forest. Or turn the biome types into labels like the original figure. Lots of options here...
+:::
+
+### Daily energy flux (single site)
+
+Textbook figure: 
+
+![](textbook_figures/daily_energy_flux.png)
+
+The energy flux variables are listed below. The ones that have multiple possible options are discussed below in the questions section. 
+
+- NETRAD: Net radiation
+- SW_IN_F: Shortwave radiation, incoming consolidated from SW_IN_F_MDS and SW_IN_ERA (negative values set to zero)
+- SW_OUT: Shortwave radiation, outgoing
+- LW_IN_F: Longwave radiation, incoming, consolidated from LW_IN_F_MDS and LW_IN_ERA
+- LW_OUT: Longwave radiation, outgoing
+
+Parsing dates and times: 
+
+```{r}
+rad_dt <- single_site_hourly %>% 
+  mutate(date_object = ymd_hm(TIMESTAMP_START), 
+         date = date(date_object), 
+         time = format(as.POSIXct(date_object), format = '%H:%M')) 
+```
+
+Show average half-hourly shortwave, longwave, and total radiation for a single site. Data collection starts `{r} min(rad_dt$date)` and ends `{r} max(rad_dt$date)`. 
+
+```{r}
+#| code-fold: true
+
+rad_means <- rad_dt %>% 
+  group_by(time) %>% 
+  summarise(rn_mean = mean(NETRAD), 
+            sw_in_mean = mean(SW_IN_F), 
+            sw_out_mean = mean(SW_OUT), 
+            lw_in_mean = mean(LW_IN_F), 
+            lw_out_mean = mean(LW_OUT)) %>% 
+  pivot_longer(!time, names_to = "energy_flux_var", values_to = "energy_flux_value") %>% 
+  mutate(energy_flux_var = factor(energy_flux_var, levels = c("rn_mean", "sw_in_mean", "sw_out_mean", "lw_in_mean", "lw_out_mean")))
+
+ggplot(rad_means, aes(x = time, y = energy_flux_value)) +
+  geom_line(aes(group = energy_flux_var, linetype = energy_flux_var)) +
+  geom_hline(yintercept = 0) +
+  #geom_point() +
+  labs(x = "Time (hr)",
+       y = "Energy flux (W m-2)") +
+  theme_minimal() +
+  scale_x_discrete(breaks = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00")) +
+  scale_linetype_manual(values = c("solid", "dotted", "dotted", "dashed", "dashed"))
+
+```
+
+::: {.callout-tip}
+## Questions
+
+1. Why does this not really line up with the textbook image? *Because this is real data. We will investigate more later*
+2. There are a few options for shortwave in besides SW_IN_F: SW_IN_POT, SW_IN_F_MDS, SW_IN_ERA. Which of these is the one we want? *Yes*
+3. Longwave in also has those options, plus JSB ones. *Also yes*
+4. Add standard deviation to these means? 
+:::
+
+Textbook figure for APAR vs GPP for two sites: 
+
+![](textbook_figures/apar.png)
+
+Show photosynthetically active radiation to GPP. 
+
+::: {.callout-tip}
+# Question
+
+**Which dataset is APAR in?** It's listed in the [data variables page](https://fluxnet.org/data/aboutdata/data-variables/), but not on the [fullset page](https://fluxnet.org/data/fluxnet2015-dataset/fullset-data-product/) or in the single site hourly, daily, or annual datasets. Other **MET_RAD** variables like SW/LW radiation and photon flux density are in those datsets. Also not in BADM. 
 :::
