@@ -31,7 +31,7 @@
 #' Need dev version of `amerifluxr` package to get `amf_download_fluxnet` function. 
 #' :::
 #' 
-## -------------------------------------------------
+## --------------------------------------------------
 #| eval: false
 
 # devtools::install_github("chuhousen/amerifluxr")
@@ -40,7 +40,7 @@
 #' 
 #' ### Read in libraries {.unnumbered .unlisted}
 #' 
-## -------------------------------------------------
+## --------------------------------------------------
 #| output: false
 library(dplyr)
 library(lubridate)
@@ -59,7 +59,7 @@ library(ggnewscale)
 #' 
 #' Showing what metadata is available for a site
 #' 
-## -------------------------------------------------
+## --------------------------------------------------
 site_metadata <- amf_site_info()
 site_metadata %>% 
   filter(SITE_ID == "US-SRM")
@@ -68,7 +68,7 @@ site_metadata %>%
 #' 
 #' - Increase timeout because default of one minute isn't enough
 #' 
-## -------------------------------------------------
+## --------------------------------------------------
 if (!dir.exists("data")){
   dir.create("data")
 }
@@ -80,7 +80,7 @@ options(timeout = 600)
 #' 
 #' Demonstrating how to use `amf_download_fluxnet` function
 #' 
-## -------------------------------------------------
+## --------------------------------------------------
 #| eval: false
 
 # amf_download_fluxnet(user_id = "kristinariemer",
@@ -100,7 +100,7 @@ options(timeout = 600)
 #' 
 #' This is for all of the Arizona sites, which includes all the sites in Dave's list. Gets list of sites that already have data downloaded (`downloaded_sites`). Then goes through each Arizona site and downloads the data if needed. If only BASE data is available, it returns the message `Cannot find data from [site]`. Downloads the zip file and unzips it. 
 #' 
-## -------------------------------------------------
+## --------------------------------------------------
 #| eval: false
 
 # az_sites <- site_metadata %>%
@@ -141,7 +141,7 @@ options(timeout = 600)
 #' - Years: 2004 - 2023
 #' - IGBP: Woody Savannas
 #' 
-## -------------------------------------------------
+## --------------------------------------------------
 single_site_daily <- read.csv("data/AMF_US-SRM_FLUXNET_FULLSET_2004-2023_3-6/AMF_US-SRM_FLUXNET_FULLSET_DD_2004-2023_3-6.csv")
 single_site_hourly <- read.csv("data/AMF_US-SRM_FLUXNET_FULLSET_2004-2023_3-6/AMF_US-SRM_FLUXNET_FULLSET_HH_2004-2023_3-6.csv")
 single_site_annually <- read.csv("data/AMF_US-SRM_FLUXNET_FULLSET_2004-2023_3-6/AMF_US-SRM_FLUXNET_FULLSET_YY_2004-2023_3-6.csv")
@@ -151,7 +151,7 @@ single_site_annually <- read.csv("data/AMF_US-SRM_FLUXNET_FULLSET_2004-2023_3-6/
 #' 
 #' They used many different variants of -9999 to represent null values. 
 #' 
-## -------------------------------------------------
+## --------------------------------------------------
 #| output: false
 
 daily_sites_paths <- list.files(".", pattern = "(FLUXNET_FULLSET_DD)", recursive = TRUE) 
@@ -171,7 +171,7 @@ multiple_sites_annual <- map_df(annual_sites_paths, ~read_csv(.x) %>% mutate(fil
 #' 
 #' Null values in FLUXNET are indicated by some variation of -9999 (-9999.x, where x can be multiple values of 0 or 9). See **Missing data** section on [Data Variables page](https://fluxnet.org/data/aboutdata/data-variables/). Returning datasets for daily and annual data that contain these NA values and then remove them from the datasets. 
 #' 
-## -------------------------------------------------
+## --------------------------------------------------
 #| warning: false
 cols_to_check <- c("GPP_NT_VUT_REF", "RECO_NT_VUT_REF", "NEE_VUT_REF", "LE_F_MDS", "H_F_MDS")
 
@@ -208,11 +208,11 @@ multiple_sites_daily <- multiple_sites_daily %>%
 #' - Takes mean of value and (n-1) / 2 values on either side of it
 #' - Bigger window size = more averaging
 #' 
-## -------------------------------------------------
+## --------------------------------------------------
 window_size <- 51
 
 #' 
-## -------------------------------------------------
+## --------------------------------------------------
 #| code-fold: true
 #| warning: false
 
@@ -255,11 +255,98 @@ ggplot(total_ts_nee, aes(x = date_object, y = NEE_VUT_REF)) +
   theme_classic()
 
 #' 
+#' ### Entire time series (multiple sites)
+#' 
+#' Same smoother as used for single site. 
+#' 
+## --------------------------------------------------
+#| warning: false
+total_ts_ms <- multiple_sites_daily %>% 
+  mutate(date_object = ymd(TIMESTAMP)) %>% 
+  left_join(site_metadata, by = c("site" = "SITE_ID")) %>% 
+  group_by(site) %>% 
+  mutate(running_mean_gpp = stats::filter(GPP_NT_VUT_REF, rep(1/window_size, window_size)), 
+         running_mean_reco = stats::filter(RECO_NT_VUT_REF, rep(1/window_size, window_size)), 
+         running_mean_nee = stats::filter(NEE_VUT_REF, rep(1/window_size, window_size)))
+
+yr_start_dates_ms <- total_ts_ms %>% 
+  select(date_object) %>% 
+  filter(grepl("-01-01", date_object)) %>% 
+  pull()
+
+#' 
+#' Show entire time series of GPP for all sites, with points for daily values.
+#' 
+## --------------------------------------------------
+#| code-fold: true
+#| warning: false
+
+ggplot(total_ts_ms, aes(x = date_object, y = GPP_NT_VUT_REF, color = site)) + 
+  geom_point(size = 0.1, alpha = 0.1) +
+  geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
+  facet_grid(vars(IGBP)) + 
+  labs(x = "Date", y = "GPP") +
+  theme_classic() + 
+  theme(panel.background = element_rect(color = "black"))
+
+ggplot(total_ts_ms, aes(x = date_object, y = RECO_NT_VUT_REF, color = site)) + 
+  geom_point(size = 0.1, alpha = 0.1) +
+  geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
+  facet_grid(vars(IGBP)) + 
+  labs(x = "Date", y = "RECO") +
+  theme_classic() + 
+  theme(panel.background = element_rect(color = "black"))
+
+ggplot(total_ts_ms, aes(x = date_object, y = NEE_VUT_REF, color = site)) + 
+  geom_point(size = 0.1, alpha = 0.1) +
+  geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
+  facet_grid(vars(IGBP)) + 
+  labs(x = "Date", y = "NEE") +
+  theme_classic() + 
+  theme(panel.background = element_rect(color = "black"))
+
+#' 
+#' Show entire time series of GPP for all sites, with daily values smoothed out as a line. 
+## --------------------------------------------------
+#| code-fold: true
+#| warning: false
+
+ggplot(total_ts_ms, aes(x = date_object, y = running_mean_gpp, color = site)) +
+  geom_line(lwd = 0.5, alpha = 0.7) +
+  geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
+  facet_grid(vars(IGBP)) + 
+  labs(x = "Date", y = "GPP (smoothed)") +
+  theme_classic() + 
+  theme(panel.background = element_rect(color = "black"))
+
+ggplot(total_ts_ms, aes(x = date_object, y = running_mean_reco, color = site)) +
+  geom_line(lwd = 0.5, alpha = 0.7) +
+  geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
+  facet_grid(vars(IGBP)) + 
+  labs(x = "Date", y = "RECO (smoothed)") +
+  theme_classic() + 
+  theme(panel.background = element_rect(color = "black"))
+
+ggplot(total_ts_ms, aes(x = date_object, y = running_mean_nee, color = site)) +
+  geom_line(lwd = 0.5, alpha = 0.7) +
+  geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
+  facet_grid(vars(IGBP)) + 
+  labs(x = "Date", y = "NEE (smoothed)") +
+  theme_classic() + 
+  theme(panel.background = element_rect(color = "black"))
+
+#' 
 #' ### Average annual time series (single site)
 #' 
 #' Show average daily values (with standard deviations)
 #' 
-## -------------------------------------------------
+## --------------------------------------------------
 #| code-fold: true
 gpp_by_date <- single_site_daily %>% 
   mutate(date_object = ymd(TIMESTAMP), 
@@ -322,7 +409,7 @@ ggplot(nee_by_date, aes(x = date_fake_year, y = nee_mean)) +
 #' 
 #' Show average daily values by site (symbols) and vegetation type (colors)
 #' 
-## -------------------------------------------------
+## --------------------------------------------------
 #| code-fold: true
 #| warning: false
 
@@ -363,76 +450,6 @@ ggplot(gpp_by_date_sites, aes(x = date_fake_year, y = nee_mean)) +
   scale_x_date(date_labels = "%B") +
   scale_shape_manual(values = 1:length(unique(gpp_by_date_sites$site)))
 
-#' ### Daily energy flux (single site)
-#' 
-#' Textbook figure: 
-#' 
-#' ![](textbook_figures/daily_energy_flux.png)
-#' 
-#' Energy flux variables: 
-#' 
-#' - NETRAD: Net radiation
-#' - SW_IN_F: Shortwave radiation, incoming consolidated from SW_IN_F_MDS and SW_IN_ERA (negative values set to zero)
-#' - SW_OUT: Shortwave radiation, outgoing
-#' - LW_IN_F: Longwave radiation, incoming, consolidated from LW_IN_F_MDS and LW_IN_ERA
-#' - LW_OUT: Longwave radiation, outgoing
-#' 
-#' Parsing dates and times: 
-#' 
-## -------------------------------------------------
-rad_dt <- single_site_hourly %>% 
-  mutate(date_object = ymd_hm(TIMESTAMP_START), 
-         date = date(date_object), 
-         time = format(as.POSIXct(date_object), format = '%H:%M')) 
-
-#' 
-#' Show average half-hourly shortwave, longwave, and total radiation for a single site. Data collection starts `{r} min(rad_dt$date)` and ends `{r} max(rad_dt$date)`. 
-#' 
-## -------------------------------------------------
-#| code-fold: true
-
-rad_means <- rad_dt %>% 
-  group_by(time) %>% 
-  summarise(rn_mean = mean(NETRAD), 
-            sw_in_mean = mean(SW_IN_F), 
-            sw_out_mean = mean(SW_OUT), 
-            lw_in_mean = mean(LW_IN_F), 
-            lw_out_mean = mean(LW_OUT)) %>% 
-  pivot_longer(!time, names_to = "energy_flux_var", values_to = "energy_flux_value") %>% 
-  mutate(energy_flux_var = factor(energy_flux_var, levels = c("rn_mean", "sw_in_mean", "sw_out_mean", "lw_in_mean", "lw_out_mean")))
-
-ggplot(rad_means, aes(x = time, y = energy_flux_value)) +
-  geom_line(aes(group = energy_flux_var, linetype = energy_flux_var)) +
-  geom_hline(yintercept = 0) +
-  #geom_point() +
-  labs(x = "Time (hr)",
-       y = "Energy flux (W m-2)") +
-  theme_minimal() +
-  scale_x_discrete(breaks = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00")) +
-  scale_linetype_manual(values = c("solid", "dotted", "dotted", "dashed", "dashed"))
-
-
-#' 
-#' ::: {.callout-tip}
-#' ## Questions
-#' 
-#' 1. Why does this not really line up with the textbook image? 
-#' 2. There are a few options for shortwave in besides SW_IN_F: SW_IN_POT, SW_IN_F_MDS, SW_IN_ERA. Which of these is the one we want? 
-#' 3. Longwave in also has those options, plus JSB ones
-#' 4. Add standard deviation to these means? 
-#' :::
-#' 
-#' Textbook figure for APAR vs GPP for two sites: 
-#' 
-#' ![](textbook_figures/apar.png)
-#' 
-#' Show photosynthetically active radiation to GPP. 
-#' 
-#' ::: {.callout-tip}
-#' # Question
-#' 
-#' **Which dataset is APAR in?** It's listed in the [data variables page](https://fluxnet.org/data/aboutdata/data-variables/), but not on the [fullset page](https://fluxnet.org/data/fluxnet2015-dataset/fullset-data-product/) or in the single site hourly, daily, or annual datasets. Other **MET_RAD** variables like SW/LW radiation and photon flux density are in those datsets. Also not in BADM. 
-#' :::
 #' 
 #' ### Comparison to meteorological variables (multiple sites)
 #' 
@@ -451,7 +468,7 @@ ggplot(rad_means, aes(x = time, y = energy_flux_value)) +
 #' 
 #' Show annual precipitation, summed from daily data, against three main variables annually. 
 #' 
-## -------------------------------------------------
+## --------------------------------------------------
 #| code-fold: true
 #| warning: false
 
@@ -473,7 +490,7 @@ ggplot(multiple_sites_annual, aes(x = P_F, y = NEE_VUT_REF, color = site)) +
 #' 
 #' Show annual temperature, averaged from daily data, against three main variables annually. 
 #' 
-## -------------------------------------------------
+## --------------------------------------------------
 #| code-fold: true
 #| warning: false
 
@@ -509,7 +526,7 @@ ggplot(multiple_sites_annual, aes(x = TA_F, y = NEE_VUT_REF, color = site)) +
 #' 
 #' Organize data to get min and max annual values for two meteorological and three product variables. Then further reorganize data to get all plots into single figure. 
 #' 
-## -------------------------------------------------
+## --------------------------------------------------
 interannual_met <- multiple_sites_annual %>% 
   group_by(site) %>% 
   summarize(min_precip = min(P_F), 
@@ -553,7 +570,7 @@ interannual_met_pairs <- interannual_met %>%
 #' 
 #' Show minimum and maximum interannual precipitation/temperature compared to min and max interannual GPP/RECO/NEE. 
 #' 
-## -------------------------------------------------
+## --------------------------------------------------
 #| code-fold: true
 #| warning: false
 
@@ -586,7 +603,7 @@ ggplot(interannual_met_pairs, aes(x = mv_value, y = pv_value, group = site, colo
 #' 
 #' 
 #' Visual check of heat flux variable ranges. 
-## -------------------------------------------------
+## --------------------------------------------------
 #| message: false
 ggplot(multiple_sites_daily, aes(x = LE_F_MDS)) +
   geom_histogram() +
@@ -599,7 +616,7 @@ ggplot(multiple_sites_daily, aes(x = H_F_MDS)) +
 #' 
 #' Show average daily summer-only sensible vs latent heat flux (i.e., Bowen ratio) for multiple sites with different vegetation types. Bowen ratios of 3, 2, 1, 0.5, and 0.25 shown by dotted lines. 
 #' 
-## -------------------------------------------------
+## --------------------------------------------------
 #| code-fold: true
 
 multiple_sites_flux <- multiple_sites_daily %>% 
@@ -636,7 +653,7 @@ ggplot(multiple_sites_flux, aes(x = latent_heat_flux, y = sensible_heat_flux, co
 #' ::: {.callout-tip}
 #' ## Questions
 #' 
-#' 1. Should watts be converted to megajoules for the heat flux variables? 
+#' 1. Should watts be converted to megajoules for the heat flux variables? *No, people will be more likely to expect Wm-2*
 #' 2. Are heat flux values expected to be negative, especially for sensible heat flux? 
 #' :::
 #' 
@@ -648,7 +665,7 @@ ggplot(multiple_sites_flux, aes(x = latent_heat_flux, y = sensible_heat_flux, co
 #' 
 #' The R package [`plotbiomes`](https://github.com/valentinitnelav/plotbiomes) can be used to recreate the base plot here, which is referred to as a [Whittaker plot](https://en.wikipedia.org/wiki/Biome#Whittaker_(1962,_1970,_1975)_biome-types). It includes a dataset of temperature, precipitation, and associated biome. 
 #' 
-## -------------------------------------------------
+## --------------------------------------------------
 data("Whittaker_biomes")
 head(Whittaker_biomes)
 unique(Whittaker_biomes$biome)
@@ -656,7 +673,7 @@ unique(Whittaker_biomes$biome)
 #' 
 #' Get mean values of annual precipitation (P_F) and temperature (TA_F) for each site, and convert precipitation to match Whittaker dataset units (mm/yr to cm/yr). 
 #' 
-## -------------------------------------------------
+## --------------------------------------------------
 whittaker_format <- multiple_sites_annual %>% 
   group_by(site) %>% 
   summarize(mean_precip = mean(P_F), 
@@ -667,7 +684,7 @@ whittaker_format <- multiple_sites_annual %>%
 #' 
 #' Show mean annual precipitation and temperature of each site over Whittaker biome. 
 #' 
-## -------------------------------------------------
+## --------------------------------------------------
 #| code-fold: true
 
 ggplot() +
@@ -683,4 +700,75 @@ ggplot() +
 #' ## Questions
 #' 
 #' 1. What to do with the plot colors? We could match IGBP colors to biome colors. Or make the biome colors represent their type, e.g., tan for desert, green for rain forest. Or turn the biome types into labels like the original figure. Lots of options here...
+#' :::
+#' 
+#' ### Daily energy flux (single site)
+#' 
+#' Textbook figure: 
+#' 
+#' ![](textbook_figures/daily_energy_flux.png)
+#' 
+#' The energy flux variables are listed below. The ones that have multiple possible options are discussed below in the questions section. 
+#' 
+#' - NETRAD: Net radiation
+#' - SW_IN_F: Shortwave radiation, incoming consolidated from SW_IN_F_MDS and SW_IN_ERA (negative values set to zero)
+#' - SW_OUT: Shortwave radiation, outgoing
+#' - LW_IN_F: Longwave radiation, incoming, consolidated from LW_IN_F_MDS and LW_IN_ERA
+#' - LW_OUT: Longwave radiation, outgoing
+#' 
+#' Parsing dates and times: 
+#' 
+## --------------------------------------------------
+rad_dt <- single_site_hourly %>% 
+  mutate(date_object = ymd_hm(TIMESTAMP_START), 
+         date = date(date_object), 
+         time = format(as.POSIXct(date_object), format = '%H:%M')) 
+
+#' 
+#' Show average half-hourly shortwave, longwave, and total radiation for a single site. Data collection starts `{r} min(rad_dt$date)` and ends `{r} max(rad_dt$date)`. 
+#' 
+## --------------------------------------------------
+#| code-fold: true
+
+rad_means <- rad_dt %>% 
+  group_by(time) %>% 
+  summarise(rn_mean = mean(NETRAD), 
+            sw_in_mean = mean(SW_IN_F), 
+            sw_out_mean = mean(SW_OUT), 
+            lw_in_mean = mean(LW_IN_F), 
+            lw_out_mean = mean(LW_OUT)) %>% 
+  pivot_longer(!time, names_to = "energy_flux_var", values_to = "energy_flux_value") %>% 
+  mutate(energy_flux_var = factor(energy_flux_var, levels = c("rn_mean", "sw_in_mean", "sw_out_mean", "lw_in_mean", "lw_out_mean")))
+
+ggplot(rad_means, aes(x = time, y = energy_flux_value)) +
+  geom_line(aes(group = energy_flux_var, linetype = energy_flux_var)) +
+  geom_hline(yintercept = 0) +
+  #geom_point() +
+  labs(x = "Time (hr)",
+       y = "Energy flux (W m-2)") +
+  theme_minimal() +
+  scale_x_discrete(breaks = c("00:00", "04:00", "08:00", "12:00", "16:00", "20:00")) +
+  scale_linetype_manual(values = c("solid", "dotted", "dotted", "dashed", "dashed"))
+
+
+#' 
+#' ::: {.callout-tip}
+#' ## Questions
+#' 
+#' 1. Why does this not really line up with the textbook image? *Because this is real data. We will investigate more later*
+#' 2. There are a few options for shortwave in besides SW_IN_F: SW_IN_POT, SW_IN_F_MDS, SW_IN_ERA. Which of these is the one we want? *Yes*
+#' 3. Longwave in also has those options, plus JSB ones. *Also yes*
+#' 4. Add standard deviation to these means? 
+#' :::
+#' 
+#' Textbook figure for APAR vs GPP for two sites: 
+#' 
+#' ![](textbook_figures/apar.png)
+#' 
+#' Show photosynthetically active radiation to GPP. 
+#' 
+#' ::: {.callout-tip}
+#' # Question
+#' 
+#' **Which dataset is APAR in?** It's listed in the [data variables page](https://fluxnet.org/data/aboutdata/data-variables/), but not on the [fullset page](https://fluxnet.org/data/fluxnet2015-dataset/fullset-data-product/) or in the single site hourly, daily, or annual datasets. Other **MET_RAD** variables like SW/LW radiation and photon flux density are in those datsets. Also not in BADM. 
 #' :::

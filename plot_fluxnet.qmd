@@ -260,34 +260,84 @@ ggplot(total_ts_nee, aes(x = date_object, y = NEE_VUT_REF)) +
 Same smoother as used for single site. 
 
 ```{r}
-total_ts_ms_gpp <- multiple_sites_daily %>% 
+#| warning: false
+total_ts_ms <- multiple_sites_daily %>% 
   mutate(date_object = ymd(TIMESTAMP)) %>% 
   left_join(site_metadata, by = c("site" = "SITE_ID")) %>% 
   group_by(site) %>% 
-  mutate(running_mean_gpp = stats::filter(GPP_NT_VUT_REF, rep(1/window_size, window_size)))
+  mutate(running_mean_gpp = stats::filter(GPP_NT_VUT_REF, rep(1/window_size, window_size)), 
+         running_mean_reco = stats::filter(RECO_NT_VUT_REF, rep(1/window_size, window_size)), 
+         running_mean_nee = stats::filter(NEE_VUT_REF, rep(1/window_size, window_size)))
 
-yr_start_dates_ms <- total_ts_ms_gpp %>% 
+yr_start_dates_ms <- total_ts_ms %>% 
   select(date_object) %>% 
   filter(grepl("-01-01", date_object)) %>% 
   pull()
 ```
 
-Show entire time series of 
+Show entire time series of GPP for all sites, with points for daily values.
 
 ```{r}
-ggplot(total_ts_ms_gpp, aes(x = date_object, y = GPP_NT_VUT_REF, color = site)) + 
+#| code-fold: true
+#| warning: false
+
+ggplot(total_ts_ms, aes(x = date_object, y = GPP_NT_VUT_REF, color = site)) + 
   geom_point(size = 0.1, alpha = 0.1) +
   geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
   facet_grid(vars(IGBP)) + 
   labs(x = "Date", y = "GPP") +
   theme_classic() + 
   theme(panel.background = element_rect(color = "black"))
 
-ggplot(total_ts_ms_gpp, aes(x = date_object, y = running_mean_gpp, color = site)) +
+ggplot(total_ts_ms, aes(x = date_object, y = RECO_NT_VUT_REF, color = site)) + 
+  geom_point(size = 0.1, alpha = 0.1) +
+  geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
+  facet_grid(vars(IGBP)) + 
+  labs(x = "Date", y = "RECO") +
+  theme_classic() + 
+  theme(panel.background = element_rect(color = "black"))
+
+ggplot(total_ts_ms, aes(x = date_object, y = NEE_VUT_REF, color = site)) + 
+  geom_point(size = 0.1, alpha = 0.1) +
+  geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
+  facet_grid(vars(IGBP)) + 
+  labs(x = "Date", y = "NEE") +
+  theme_classic() + 
+  theme(panel.background = element_rect(color = "black"))
+```
+
+Show entire time series of GPP for all sites, with daily values smoothed out as a line. 
+```{r}
+#| code-fold: true
+#| warning: false
+
+ggplot(total_ts_ms, aes(x = date_object, y = running_mean_gpp, color = site)) +
   geom_line(lwd = 0.5, alpha = 0.7) +
   geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
   facet_grid(vars(IGBP)) + 
   labs(x = "Date", y = "GPP (smoothed)") +
+  theme_classic() + 
+  theme(panel.background = element_rect(color = "black"))
+
+ggplot(total_ts_ms, aes(x = date_object, y = running_mean_reco, color = site)) +
+  geom_line(lwd = 0.5, alpha = 0.7) +
+  geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
+  facet_grid(vars(IGBP)) + 
+  labs(x = "Date", y = "RECO (smoothed)") +
+  theme_classic() + 
+  theme(panel.background = element_rect(color = "black"))
+
+ggplot(total_ts_ms, aes(x = date_object, y = running_mean_nee, color = site)) +
+  geom_line(lwd = 0.5, alpha = 0.7) +
+  geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
+  facet_grid(vars(IGBP)) + 
+  labs(x = "Date", y = "NEE (smoothed)") +
   theme_classic() + 
   theme(panel.background = element_rect(color = "black"))
 ```
