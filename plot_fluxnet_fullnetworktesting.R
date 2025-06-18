@@ -331,6 +331,194 @@ ggplot(total_ts_nee, aes(x = date_object, y = NEE_VUT_REF)) +
   labs(x = "Date", y = "NEE (smoothed)") +
   theme_classic()
 
+
+#' 
+#' ### Entire time series (multiple sites)
+#' 
+#' Same smoother as used for single site. 
+#' 
+## --------------------------------------------------
+#| warning: false
+total_ts_ms <- multiple_sites_daily %>% 
+  mutate(date_object = ymd(TIMESTAMP)) %>% 
+  left_join(site_metadata, by = c("site" = "SITE_ID")) %>% 
+  group_by(site) %>% 
+  mutate(running_mean_gpp = stats::filter(GPP_NT_VUT_REF, rep(1/window_size, window_size)), 
+         running_mean_reco = stats::filter(RECO_NT_VUT_REF, rep(1/window_size, window_size)), 
+         running_mean_nee = stats::filter(NEE_VUT_REF, rep(1/window_size, window_size)))
+
+yr_start_dates_ms <- total_ts_ms %>% 
+  select(date_object) %>% 
+  filter(grepl("-01-01", date_object)) %>% 
+  pull()
+
+#' 
+#' Show entire time series of GPP for all sites, with points for daily values.
+#' 
+## --------------------------------------------------
+#| code-fold: true
+#| warning: false
+
+ggplot(total_ts_ms, aes(x = date_object, y = GPP_NT_VUT_REF, color = site)) + 
+  geom_point(size = 0.1, alpha = 0.1) +
+  geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
+  facet_grid(vars(IGBP)) + 
+  labs(x = "Date", y = "GPP") +
+  theme_classic() + 
+  theme(panel.background = element_rect(color = "black"))
+
+ggplot(total_ts_ms, aes(x = date_object, y = RECO_NT_VUT_REF, color = site)) + 
+  geom_point(size = 0.1, alpha = 0.1) +
+  geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
+  facet_grid(vars(IGBP)) + 
+  labs(x = "Date", y = "RECO") +
+  theme_classic() + 
+  theme(panel.background = element_rect(color = "black"))
+
+ggplot(total_ts_ms, aes(x = date_object, y = NEE_VUT_REF, color = site)) + 
+  geom_point(size = 0.1, alpha = 0.1) +
+  geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
+  facet_grid(vars(IGBP)) + 
+  labs(x = "Date", y = "NEE") +
+  theme_classic() + 
+  theme(panel.background = element_rect(color = "black"))
+
+#calculating z-scores for each 
+total_ts_z <- total_ts_ms %>%
+  group_by(site) %>%
+  mutate(
+    GPP_z = scale(GPP_NT_VUT_REF),
+    RECO_z = scale(RECO_NT_VUT_REF),
+    NEE_z = scale(NEE_VUT_REF)
+  ) %>%
+  ungroup()
+
+total_ts_z <- total_ts_z %>%
+  mutate(
+    NEE_sign = factor(
+      ifelse(NEE_VUT_REF < 0, "Sink (NEE < 0)", "Source (NEE ≥ 0)"),
+      levels = c("Sink (NEE < 0)", "Source (NEE ≥ 0)")
+    )
+  )
+
+#plotting z-score
+ggplot(total_ts_z, aes(x = date_object, y = GPP_z, color = site)) + 
+  geom_point(size = 0.1, alpha = 0.1) +
+  geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
+  facet_grid(vars(IGBP)) + 
+  labs(x = "Date", y = "GPP (z-score)") +
+  theme_classic() + 
+  theme(panel.background = element_rect(color = "black"))
+
+ggplot(total_ts_z, aes(x = date_object, y = RECO_z, color = site)) + 
+  geom_point(size = 0.1, alpha = 0.1) +
+  geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
+  facet_grid(vars(IGBP)) + 
+  labs(x = "Date", y = "RECO (z-score)") +
+  theme_classic() + 
+  theme(panel.background = element_rect(color = "black"))
+
+ggplot(total_ts_z, aes(x = date_object, y = NEE_z, color = site)) + 
+  geom_point(size = 0.4, alpha = 0.4) +
+  geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
+  facet_grid(vars(IGBP)) + 
+  labs(x = "Date", y = "NEE (z-score)") +
+  theme_classic() + 
+  theme(panel.background = element_rect(color = "black"))
+#' 
+#' Show entire time series of GPP for all sites, with daily values smoothed out as a line. 
+## --------------------------------------------------
+#| code-fold: true
+#| warning: false
+
+ggplot(total_ts_ms, aes(x = date_object, y = running_mean_gpp, color = site)) +
+  geom_line(lwd = 0.5, alpha = 0.7) +
+  geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
+  facet_grid(vars(IGBP)) + 
+  labs(x = "Date", y = "GPP (smoothed)") +
+  theme_classic() + 
+  theme(panel.background = element_rect(color = "black"))
+
+ggplot(total_ts_ms, aes(x = date_object, y = running_mean_reco, color = site)) +
+  geom_line(lwd = 0.5, alpha = 0.7) +
+  geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
+  facet_grid(vars(IGBP)) + 
+  labs(x = "Date", y = "RECO (smoothed)") +
+  theme_classic() + 
+  theme(panel.background = element_rect(color = "black"))
+
+ggplot(total_ts_ms, aes(x = date_object, y = running_mean_nee, color = site)) +
+  geom_line(lwd = 0.5, alpha = 0.7) +
+  geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
+  facet_grid(vars(IGBP)) + 
+  labs(x = "Date", y = "NEE (smoothed)") +
+  theme_classic() + 
+  theme(panel.background = element_rect(color = "black"))
+
+ggplot(total_ts_z, aes(x = date_object, y = NEE_z, color = NEE_sign)) + 
+  geom_point(size = 0.3, alpha = 0.3) +
+  geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
+  facet_grid(vars(IGBP)) + 
+  labs(x = "Date", y = "NEE (z-score)", color = "NEE Sign") +
+  scale_color_manual(values = c("Sink (NEE < 0)" = "#1b9e77", "Source (NEE ≥ 0)" = "#d95f02")) +
+  theme_classic() + 
+  theme(panel.background = element_rect(color = "black"))
+
+
+#Jittered box plots 
+
+# Set up for box plots
+total_ts_box <- total_ts_z %>%
+  mutate(
+    year = lubridate::year(date_object),
+    NEE_sign = factor(
+      ifelse(NEE_VUT_REF < 0, "Sink (NEE < 0)", "Source (NEE ≥ 0)"),
+      levels = c("Sink (NEE < 0)", "Source (NEE ≥ 0)")
+    )
+  )
+
+# count the number of sites in the sample
+site_counts <- total_ts_box %>%
+  group_by(year, IGBP) %>%
+  summarize(n_sites = n_distinct(site), .groups = "drop")
+
+
+ggplot(total_ts_box, aes(x = factor(year), y = NEE_VUT_REF)) +
+  geom_boxplot(outlier.shape = NA, fill = "grey80", alpha = 0.5) +
+  geom_jitter(aes(color = NEE_sign), size = 0.3, alpha = 0.15, width = 0.25) +
+  geom_text(
+    data = site_counts,
+    aes(x = factor(year), y = Inf, label = paste0(n_sites)),
+    inherit.aes = FALSE,
+    vjust = 1.2,
+    size = 3
+  ) +
+  scale_color_manual(
+    name = "NEE Sign",
+    values = c("Sink (NEE < 0)" = "#1b9e77", "Source (NEE ≥ 0)" = "#d95f02")
+  ) +
+  facet_grid(vars(IGBP)) +
+  labs(
+    x = "Year",
+    y = "NEE (μmol m⁻² s⁻¹)",
+    title = "Annual NEE Distribution with Site Counts"
+  ) +
+  theme_classic() +
+  theme(
+    panel.background = element_rect(color = "black"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
 #' 
 #' ### Average annual time series (single site)
 #' 
