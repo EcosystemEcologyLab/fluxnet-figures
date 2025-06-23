@@ -136,10 +136,13 @@ for(site in az_sites$SITE_ID){
 nm_sites <- site_metadata %>%
   filter(STATE == "NM")
 
+USA_sites <- site_metadata %>%
+  filter(COUNTRY=="USA")
+
 downloaded_sites <- list.dirs("data") %>%
   str_split_i("_", 2)
 
-for(site in nm_sites$SITE_ID){
+for(site in USA_sites$SITE_ID){
   if(!site %in% downloaded_sites){
     print(paste0("Downloading data for ", site))
     tryCatch({
@@ -241,6 +244,14 @@ multiple_sites_annual_subset <- map_df(
 # Combine both sets
 multiple_sites_annual <- bind_rows(multiple_sites_annual_fullset, multiple_sites_annual_subset)
 
+#add global metadata
+Fluxnet_info <- read.csv("../fluxnetreader/data/FLUXNET_INFO/FLUXNET10282025_INFO.csv")
+Fluxnet_info <- Fluxnet_info %>%
+  rename(site = SITEID)
+
+# Merge the data frames by site
+multiple_sites_annual <- multiple_sites_annual_fullset %>%
+  left_join(Fluxnet_info, by = "site")
 
 
 #' 
@@ -519,6 +530,111 @@ ggplot(total_ts_box, aes(x = factor(year), y = NEE_VUT_REF)) +
     axis.text.x = element_text(angle = 45, hjust = 1)
   )
 
+
+#' 
+#' ### Boxplot of annual NEE as a time series across all the IGBP (multiple sites)
+#' 
+#' Show annual NEE values as a box plot
+#' 
+## -------------------------------------------------
+#| code-fold: true
+#| warning: false
+
+#multiple sites annual
+# Add year
+multiple_sites_annual <- multiple_sites_annual %>%
+  mutate(year = TIMESTAMP)
+
+# Site count per year and ClassID
+record_lengths <- multiple_sites_annual %>%
+  group_by(site, ClassID_SitePI) %>%
+  summarize(n_years = n_distinct(TIMESTAMP), .groups = "drop") %>%
+  group_by(ClassID_SitePI) %>%
+  summarize(longest_record = max(n_years), .groups = "drop") %>%
+  arrange(desc(longest_record))
+
+# Define sign and groupings
+group1 <- c("DBF", "ENF", "MF", "EBF")
+group2 <- c("OSH", "CSH", "WSA", "SAV")
+group3 <- c("GRA", "CRO", "WET")
+
+multiple_sites_annual <- multiple_sites_annual %>%
+  mutate(
+    year = TIMESTAMP,
+    NEE_sign = factor(
+      ifelse(NEE_VUT_REF < 0, "Sink (NEE < 0)", "Source (NEE ≥ 0)"),
+      levels = c("Sink (NEE < 0)", "Source (NEE ≥ 0)")
+    ),
+    IGBP_group = case_when(
+      ClassID_SitePI %in% group1 ~ "Forest",
+      ClassID_SitePI %in% group2 ~ "Shrub/Opens",
+      ClassID_SitePI %in% group3 ~ "Grass/Crops/Wet",
+      TRUE ~ "Other"
+    )
+  )
+
+# Create site count annotations
+annual_site_counts <- multiple_sites_annual %>%
+  group_by(year, ClassID_SitePI) %>%
+  summarize(n_sites = n_distinct(site), .groups = "drop")
+
+plot_nee_box <- function(data, site_counts, group_label) {
+  ggplot(data, aes(x = factor(year), y = NEE_VUT_REF)) +
+    geom_boxplot(
+      outlier.shape = NA,
+      fill = NA, color = "black", alpha = 0.4
+    ) +
+    geom_jitter(
+      aes(color = NEE_sign),
+      size = 0.8, alpha = 0.3, width = 0.25
+    ) +
+    geom_text(
+      data = site_counts,
+      aes(x = factor(year), y = 1200, label = paste0("n=", n_sites)),
+      inherit.aes = FALSE,
+      size = 3, vjust = 0
+    ) +
+    scale_color_manual(
+      values = c("Sink (NEE < 0)" = "#1b9e77", "Source (NEE ≥ 0)" = "#d95f02"),
+      name = "NEE Sign"
+    ) +
+    facet_wrap(vars(ClassID_SitePI), ncol = 1, strip.position = "right") +
+    coord_cartesian(ylim = c(-1200, 1250)) +
+    labs(
+      title = group_label,
+      x = "Year",
+      y = "NEE (μmol m⁻² s⁻¹)"
+    ) +
+    theme_classic() +
+    theme(
+      panel.background = element_rect(color = "black"),
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      legend.position = "bottom"
+    )
+}
+
+# Filter each group
+grouped_data <- function(label) {
+  filter(multiple_sites_annual, IGBP_group == label)
+}
+
+grouped_counts <- function(label) {
+  filter(annual_site_counts, ClassID_SitePI %in% unique(grouped_data(label)$ClassID_SitePI))
+}
+
+# Generate each vertically stacked plot
+plot1 <- plot_nee_box(grouped_data("Forest"), grouped_counts("Forest"), "Forests (DBF, ENF, MF, EBF)")
+plot2 <- plot_nee_box(grouped_data("Shrub/Opens"), grouped_counts("Shrub/Opens"), "Shrublands and Savannas (OSH, CSH, WSA, SAV)")
+plot3 <- plot_nee_box(grouped_data("Grass/Crops/Wet"), grouped_counts("Grass/Crops/Wet"), "Grasses, Crops, Wetlands (GRA, CRO, WET)")
+plot4 <- plot_nee_box(grouped_data("Other"), grouped_counts("Other"), "Other IGBP Classes")
+
+# Print all vertically
+print(plot1)
+print(plot2)
+print(plot3)
+print(plot4)
+
+
 #' 
 #' ### Average annual time series (single site)
 #' 
@@ -720,13 +836,7 @@ ggplot(rad_means, aes(x = time, y = energy_flux_value)) +
 #| code-fold: true
 #| warning: false
 
-Fluxnet_info <- read.csv("../fluxnetreader/data/FLUXNET_INFO/FLUXNET10282025_INFO.csv")
-Fluxnet_info <- Fluxnet_info %>%
-  rename(site = SITEID)
 
-# Merge the data frames by site
-multiple_sites_annual <- multiple_sites_annual %>%
-  left_join(Fluxnet_info, by = "site")
 
 
 ggplot(multiple_sites_annual, aes(x = P_F, y = GPP_NT_VUT_REF, color = ClassID_SitePI)) +
@@ -928,7 +1038,7 @@ head(Whittaker_biomes)
 unique(Whittaker_biomes$biome)
 
 
-multiple_sites_annual$NEE_VUT_REF
+
 #' 
 #' Get mean values of annual precipitation (P_F) and temperature (TA_F) for each site, and convert precipitation to match Whittaker dataset units (mm/yr to cm/yr). 
 #' 
