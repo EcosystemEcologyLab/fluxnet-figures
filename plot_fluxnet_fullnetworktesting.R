@@ -53,7 +53,7 @@ library(tidyr)
 library(plotbiomes)
 library(measurements)
 library(ggnewscale)
-
+library(forcats)
 
 #' 
 #' ### Download site metadata {.unnumbered .unlisted}
@@ -64,6 +64,67 @@ library(ggnewscale)
 site_metadata <- amf_site_info()
 site_metadata %>% 
   filter(SITE_ID == "US-SRM")
+
+#General Metadata file
+# 1. Load AmeriFlux metadata via amerifluxr
+af_meta <- amf_site_info() %>%
+  select(
+    SITE_ID, SITE_NAME, COUNTRY, STATE, IGBP,
+    LOCATION_LAT, LOCATION_LONG, LOCATION_ELEV,
+    CLIMATE_KOEPPEN, MAT, MAP
+  ) %>%
+  mutate(DATA_SOURCE = "AmeriFlux")
+
+# 2) ICOS SITEINFO_L2 files
+icos_files <- list.files(
+  "data",
+  pattern    = "ICOSETC_.*_SITEINFO_L2\\.csv$",
+  recursive  = TRUE,
+  full.names = TRUE
+)
+
+# 3) Read + pivot, forcing every DATAVALUE to char and collapsing duplicates
+icos_meta <- map_dfr(icos_files, function(path) {
+  read_csv(path, col_types = cols(
+    SITE_ID   = col_character(),
+    GROUP_ID  = col_character(),
+    VARIABLE  = col_character(),
+    DATAVALUE = col_character()
+  )) %>%
+    select(SITE_ID, VARIABLE, DATAVALUE) %>%
+    # if a VARIABLE appears more than once, just take the first
+    group_by(SITE_ID, VARIABLE) %>%
+    summarize(DATAVALUE = DATAVALUE[1], .groups = "drop") %>%
+    pivot_wider(
+      names_from   = VARIABLE,
+      values_from  = DATAVALUE
+    )
+})
+
+# 4) Clean & align names/types to match af_meta
+icos_meta_clean <- icos_meta %>%
+  transmute(
+    SITE_ID,
+    SITE_NAME,
+    COUNTRY           = NA_character_,
+    STATE             = NA_character_,
+    IGBP,
+    LOCATION_LAT      = as.numeric(LOCATION_LAT),
+    LOCATION_LONG     = as.numeric(LOCATION_LONG),
+    LOCATION_ELEV     = as.numeric(LOCATION_ELEV),
+    CLIMATE_KOEPPEN,
+    MAT               = as.numeric(MAT),
+    MAP               = as.numeric(MAP),
+    DATA_SOURCE       = "ICOS"
+  )
+
+# 5) Combine
+site_metadata <- bind_rows(af_meta, icos_meta_clean)
+
+site_metadata <- site_metadata %>%
+  distinct(SITE_ID, .keep_all = TRUE)
+
+
 
 #' Do download setup
 #' 
@@ -104,69 +165,118 @@ unzip("data/AMF_US-xSR_FLUXNET_FULLSET_2017-2021_3-5.zip")
 ## -------------------------------------------------
 #| eval: false
 
-az_sites <- site_metadata %>%
-  filter(STATE == "AZ")
 
-downloaded_sites <- list.dirs("data") %>%
-  str_split_i("_", 2)
+#datafiles from Ameriflux are pulled down as zipped folders
+#let's check for files downloaded but not unzipped. 
+# List all FLUXNET_FULLSET zip files
+zip_files <- list.files("data", pattern = "FLUXNET_FULLSET.*\\.zip$", full.names = TRUE)
 
-for(site in az_sites$SITE_ID){
-  if(!site %in% downloaded_sites){
-    print(paste0("Downloading data for ", site))
-    tryCatch({
-      amf_download_fluxnet(user_id = "davidjpmoore",
-                           user_email = "davidjpmoore@arizona.edu",
-                           site_id = site,
-                           data_product = "FLUXNET",
-                           data_variant = "FULLSET",
-                           data_policy = "CCBY4.0",
-                           agree_policy = TRUE,
-                           intended_use = "synthesis",
-                           intended_use_text = "creating pipeline for standardized figures",
-                           out_dir = "data/")
-      zip_path <- Sys.glob(file.path("data", paste0("AMF_", site, "*")))
-      unzipped_path <- tools::file_path_sans_ext(zip_path)
-      unzip(zip_path, exdir = unzipped_path)
-      }, error = function(e){cat("ERROR:",conditionMessage(e), "\n")})
-    } else {
-      print(paste0("Data has already been downloaded for ", site))
-    }
+# Get corresponding expected folder names by stripping .zip
+expected_dirs <- tools::file_path_sans_ext(zip_files)
+
+# Check which have already been unzipped (exist as folders)
+already_unzipped <- dir.exists(expected_dirs)
+
+# Subset only the files that still need to be unzipped
+files_to_unzip <- zip_files[!already_unzipped]
+
+# Loop through and unzip each
+for (zip_path in files_to_unzip) {
+  folder_name <- tools::file_path_sans_ext(zip_path)
+  message("Unzipping: ", basename(zip_path))
+  unzip(zip_path, exdir = folder_name)
 }
 
-nm_sites <- site_metadata %>%
-  filter(STATE == "NM")
+#ICOS sites
 
-USA_sites <- site_metadata %>%
-  filter(COUNTRY=="USA")
+# where your ICOS zip files currently live
+icos_zip_dir <- "data/Ecosystem final quality (L2) product in ETC-Archive format - release 2025-1"
 
-downloaded_sites <- list.dirs("data") %>%
-  str_split_i("_", 2)
+# find all the ICOSETC zip files
+icos_zips <- list.files(
+  path       = icos_zip_dir,
+  pattern    = "ICOSETC_.*_ARCHIVE_L2.*\\.zip$",
+  full.names = TRUE
+)
 
-for(site in USA_sites$SITE_ID){
-  if(!site %in% downloaded_sites){
-    print(paste0("Downloading data for ", site))
-    tryCatch({
-      amf_download_fluxnet(user_id = "davidjpmoore",
-                           user_email = "davidjpmoore@arizona.edu",
-                           site_id = site,
-                           data_product = "FLUXNET",
-                           data_variant = "FULLSET",
-                           data_policy = "CCBY4.0",
-                           agree_policy = TRUE,
-                           intended_use = "synthesis",
-                           intended_use_text = "creating pipeline for standardized figures",
-                           out_dir = "data/")
-      zip_path <- Sys.glob(file.path("data", paste0("AMF_", site, "*")))
-      unzipped_path <- tools::file_path_sans_ext(zip_path)
-      unzip(zip_path, exdir = unzipped_path)
-    }, error = function(e){
-      cat("ERROR:", conditionMessage(e), "\n")
-    })
+# make sure the target data/ folder exists
+if (!dir.exists("data")) dir.create("data", recursive = TRUE)
+
+# unzip each into data/<basename without .zip>
+for (zip_path in icos_zips) {
+  # strip off the path and .zip
+  folder_name <- tools::file_path_sans_ext(basename(zip_path))
+  out_dir     <- file.path("data", folder_name)
+  
+  if (!dir.exists(out_dir)) {
+    message("Unzipping ", basename(zip_path), " → ", out_dir)
+    unzip(zip_path, exdir = out_dir)
   } else {
-    print(paste0("Data has already been downloaded for ", site))
+    message("Already unzipped: ", folder_name)
   }
 }
 
+
+
+# 
+# az_sites <- site_metadata %>%
+#   filter(STATE == "AZ")
+
+downloaded_sites <- list.dirs("data") %>%
+  str_split_i("_", 2)
+# 
+# for(site in az_sites$SITE_ID){
+#   if(!site %in% downloaded_sites){
+#     print(paste0("Downloading data for ", site))
+#     tryCatch({
+#       amf_download_fluxnet(user_id = "davidjpmoore",
+#                            user_email = "davidjpmoore@arizona.edu",
+#                            site_id = site,
+#                            data_product = "FLUXNET",
+#                            data_variant = "FULLSET",
+#                            data_policy = "CCBY4.0",
+#                            agree_policy = TRUE,
+#                            intended_use = "synthesis",
+#                            intended_use_text = "creating pipeline for standardized figures",
+#                            out_dir = "data/")
+#       zip_path <- Sys.glob(file.path("data", paste0("AMF_", site, "*")))
+#       unzipped_path <- tools::file_path_sans_ext(zip_path)
+#       unzip(zip_path, exdir = unzipped_path)
+#       }, error = function(e){cat("ERROR:",conditionMessage(e), "\n")})
+#     } else {
+#       print(paste0("Data has already been downloaded for ", site))
+#     }
+# }
+
+# USA_sites <- site_metadata %>%
+#   filter(COUNTRY=="USA")
+# 
+# 
+# for(site in USA_sites$SITE_ID){
+#   if(!site %in% downloaded_sites){
+#     print(paste0("Downloading data for ", site))
+#     tryCatch({
+#       amf_download_fluxnet(user_id = "davidjpmoore",
+#                            user_email = "davidjpmoore@arizona.edu",
+#                            site_id = site,
+#                            data_product = "FLUXNET",
+#                            data_variant = "FULLSET",
+#                            data_policy = "CCBY4.0",
+#                            agree_policy = TRUE,
+#                            intended_use = "synthesis",
+#                            intended_use_text = "creating pipeline for standardized figures",
+#                            out_dir = "data/")
+#       zip_path <- Sys.glob(file.path("data", paste0("AMF_", site, "*")))
+#       unzipped_path <- tools::file_path_sans_ext(zip_path)
+#       unzip(zip_path, exdir = unzipped_path)
+#     }, error = function(e){
+#       cat("ERROR:", conditionMessage(e), "\n")
+#     })
+#   } else {
+#     print(paste0("Data has already been downloaded for ", site))
+#   }
+# }
+# 
 
 
 
@@ -192,11 +302,90 @@ single_site_annually <- read.csv("data/AMF_US-SRM_FLUXNET_FULLSET_2004-2023_3-6/
 ## -------------------------------------------------
 #| output: false
 
-daily_sites_paths <- list.files(".", pattern = "(FLUXNET_FULLSET_DD)", recursive = TRUE) 
 
-multiple_sites_daily <- map_df(daily_sites_paths, ~read_csv(.x) %>% mutate(file = basename(.x), .before = 1)) %>% 
-  mutate(file = str_split_i(file, "_", 2)) %>% 
-  rename(site = file)
+multiple_sites_daily <- readRDS("data/multiple_sites_daily.rds")
+
+
+# where to store your cached data
+cache_file <- "data/multiple_sites_daily.RDS"
+
+# helper to extract site ID from a filename like "AMF_US-SRM_…"
+extract_site <- function(path) {
+  basename(path) %>% 
+    str_split("_", simplify = TRUE) %>% 
+    .[,2]
+}
+
+patterns <- c(
+  "FLUXNET_FULLSET_DD.*\\.csv$",          # AmeriFlux daily fullset
+  "ICOSETC_[^/]+_FLUXNET_DD_L2\\.csv$"    # ICOS daily L2
+)
+
+all_paths <- list.files(
+  ".", 
+  pattern    = paste(patterns, collapse = "|"),
+  recursive  = TRUE, 
+  full.names = TRUE
+)
+
+# drop anything with "VARINFO" in its basename
+all_paths <- all_paths[!grepl("VARINFO", basename(all_paths))]
+
+if (file.exists(cache_file)) {
+  # 1) load what you already read
+  multiple_sites_daily <- readRDS(cache_file)
+  
+  # 2) figure out which sites are already in memory
+  loaded_sites <- unique(multiple_sites_daily$site)
+  
+  # 3) pick only the new file paths
+  new_paths <- all_paths[!extract_site(all_paths) %in% loaded_sites]
+  
+  if (length(new_paths)>0) {
+    new_data <- map_df(new_paths, ~
+                         read_csv(.x) %>% 
+                         mutate(
+                           file = basename(.x), 
+                           .before = 1
+                         ) %>% 
+                         mutate(site = extract_site(.x))
+    )
+    multiple_sites_daily <- bind_rows(multiple_sites_daily, new_data)
+    saveRDS(multiple_sites_daily, cache_file)
+    message("Loaded ", nrow(new_data), " new rows from ", length(new_paths), " sites.")
+  } else {
+    message("No new sites to load; cache is up to date.")
+  }
+  
+} else {
+  # first‐time run: read everything and cache it
+  multiple_sites_daily <- map_df(all_paths, ~
+                                   read_csv(.x) %>% 
+                                   mutate(
+                                     file = basename(.x), 
+                                     .before = 1
+                                   ) %>% 
+                                   mutate(site = extract_site(.x))
+  )
+  saveRDS(multiple_sites_daily, cache_file)
+  message("Initial load: ", nrow(multiple_sites_daily), " rows from ", length(all_paths), " files.")
+}
+
+# at this point `multiple_sites_daily` contains all your data,
+# and future runs will only read in the new files.
+
+
+#
+# Code that reads in each new file
+#
+# daily_sites_paths <- list.files(".", pattern = "(FLUXNET_FULLSET_DD)", recursive = TRUE) 
+# 
+# multiple_sites_daily <- map_df(daily_sites_paths, ~read_csv(.x) %>% mutate(file = basename(.x), .before = 1)) %>% 
+#   mutate(file = str_split_i(file, "_", 2)) %>% 
+#   rename(site = file)
+# 
+# # save the data.frame to an .RDS file
+# saveRDS(multiple_sites_daily, file = "data/multiple_sites_daily.rds")
 
 # annual_sites_paths <- list.files(".", pattern = "(FLUXNET_FULLSET_YY)", recursive = TRUE) 
 # 
@@ -244,15 +433,15 @@ multiple_sites_annual_subset <- map_df(
 # Combine both sets
 multiple_sites_annual <- bind_rows(multiple_sites_annual_fullset, multiple_sites_annual_subset)
 
-#add global metadata
-Fluxnet_info <- read.csv("../fluxnetreader/data/FLUXNET_INFO/FLUXNET10282025_INFO.csv")
-Fluxnet_info <- Fluxnet_info %>%
-  rename(site = SITEID)
+# #add global metadata
+# Fluxnet_info <- read.csv("../fluxnetreader/data/FLUXNET_INFO/FLUXNET10282025_INFO.csv")
+# Fluxnet_info <- Fluxnet_info %>%
+#   rename(site = SITEID)
 
 # Merge the data frames by site
 multiple_sites_annual <- multiple_sites_annual_fullset %>%
   left_join(Fluxnet_info, by = "site")
-
+######
 
 #' 
 #' ### Change null values to NA {.unnumbered .unlisted}
@@ -276,6 +465,11 @@ multiple_sites_daily_nulls <- multiple_sites_daily %>%
 
 multiple_sites_daily <- multiple_sites_daily %>% 
   mutate(replace(across(cols_to_check), across(cols_to_check) < -9000, NA))
+
+multiple_sites_daily <- multiple_sites_daily %>%
+  left_join(site_metadata,
+            by = c("site" = "SITE_ID"))
+
 
 #' 
 #' The `{r} length(unique(multiple_sites_daily$site)) ` sites currently in the report are: `{r} unique(multiple_sites_daily$site)`
@@ -363,6 +557,14 @@ yr_start_dates_ms <- total_ts_ms %>%
   filter(grepl("-01-01", date_object)) %>% 
   pull()
 
+total_ts_ms <- total_ts_ms %>%
+  mutate(
+    NEE_sign = factor(
+      ifelse(NEE_VUT_REF < 0, "Sink (NEE < 0)", "Source (NEE ≥ 0)"),
+      levels = c("Sink (NEE < 0)", "Source (NEE ≥ 0)")
+    )
+  )
+
 #' 
 #' Show entire time series of GPP for all sites, with points for daily values.
 #' 
@@ -370,32 +572,109 @@ yr_start_dates_ms <- total_ts_ms %>%
 #| code-fold: true
 #| warning: false
 
-ggplot(total_ts_ms, aes(x = date_object, y = GPP_NT_VUT_REF, color = site)) + 
-  geom_point(size = 0.1, alpha = 0.1) +
-  geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
-  geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
-  facet_grid(vars(IGBP)) + 
-  labs(x = "Date", y = "GPP") +
-  theme_classic() + 
-  theme(panel.background = element_rect(color = "black"))
+#Filter out any rows that couldn't plot anyway
+total_ts_ms_clean <- total_ts_ms %>%
+  filter(!is.na(NEE_VUT_REF), !is.na(NEE_sign), !is.na(date_object))
 
-ggplot(total_ts_ms, aes(x = date_object, y = RECO_NT_VUT_REF, color = site)) + 
-  geom_point(size = 0.1, alpha = 0.1) +
-  geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
-  geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
-  facet_grid(vars(IGBP)) + 
-  labs(x = "Date", y = "RECO") +
-  theme_classic() + 
-  theme(panel.background = element_rect(color = "black"))
+#Compute distinct years per IGBP
+igbp_years <- total_ts_ms %>%
+  mutate(year = year(date_object)) %>%
+  group_by(IGBP) %>%
+  summarize(n_years = n_distinct(year), .groups = "drop")
 
-ggplot(total_ts_ms, aes(x = date_object, y = NEE_VUT_REF, color = site)) + 
-  geom_point(size = 0.1, alpha = 0.1) +
-  geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
-  geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
-  facet_grid(vars(IGBP)) + 
-  labs(x = "Date", y = "NEE") +
-  theme_classic() + 
-  theme(panel.background = element_rect(color = "black"))
+#Reorder the IGBP factor in your main data
+total_ts_ms <- total_ts_ms %>%
+  mutate(
+    IGBP = factor(
+      IGBP,
+      levels = igbp_years %>% 
+        arrange(desc(n_years)) %>% 
+        pull(IGBP)
+    )
+  )
+
+
+ICOS_AMF_dailyNEE_byIGBP <-ggplot(total_ts_ms, aes(x = date_object, y = NEE_VUT_REF, color = NEE_sign)) + 
+  geom_line(aes(group = site), linewidth = 0.3, alpha = 0.05, na.rm = TRUE) +
+  geom_point(size = 0.1, alpha = 0.1, na.rm = TRUE) +
+  geom_vline(xintercept = yr_start_dates_ms, color = "grey50", alpha = 0.1) +
+  geom_hline(yintercept = 0,            color = "grey50", alpha = 0.1, linetype = "dashed") +
+  facet_grid(rows = vars(IGBP)) + 
+  scale_color_manual(
+    name   = "NEE Sign",
+    values = c("Sink (NEE < 0)" = "#1b9e77",
+               "Source (NEE ≥ 0)" = "#d95f02")
+  ) +
+  labs(x = "Date", y = "NEE (μmol m⁻² s⁻¹)") +
+  theme_classic() +
+  theme(
+    panel.background = element_rect(color = "black"),
+    legend.position   = "bottom"
+  )
+
+ICOS_AMF_dailyNEE_byIGBP <- ICOS_AMF_dailyNEE_byIGBP +
+  theme_classic(base_size = 14) +
+  theme(
+    axis.title      = element_text(size = 16),
+    axis.text       = element_text(size = 10),
+    strip.text      = element_text(size = 11), #IGBP labels
+    legend.title    = element_text(size = 14),
+    legend.text     = element_text(size = 12),
+    legend.key.size = unit(1, "lines")
+  ) +
+  guides(
+    color = guide_legend(
+      override.aes = list(
+        size      = 4,
+        linewidth = 1.5,
+        alpha     = 1
+      )
+    )
+  )
+
+# 2) Make sure output folder exists
+if (!dir.exists("saved_plots")) dir.create("saved_plots")
+
+# 3) Save the plot
+ggsave(
+  filename = "saved_plots/ICOS_AMF_dailyNEE_byIGBP.png",
+  plot     = ICOS_AMF_dailyNEE_byIGBP,
+  width    = 10,      # inches
+  height   = 8,       # inches
+  dpi      = 300      # high resolution
+)
+
+
+# 
+# ggplot(total_ts_ms, aes(x = date_object, y = GPP_NT_VUT_REF, color = IGBP)) + 
+#   geom_point(size = 0.1, alpha = 0.1) +
+#   geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+#   geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
+#   facet_grid(vars(IGBP)) + 
+#   labs(x = "Date", y = "GPP") +
+#   theme_classic() + 
+#   theme(panel.background = element_rect(color = "black"))
+# 
+# ggplot(total_ts_ms, aes(x = date_object, y = RECO_NT_VUT_REF, color = site)) + 
+#   geom_point(size = 0.1, alpha = 0.1) +
+#   geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+#   geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
+#   facet_grid(vars(IGBP)) + 
+#   labs(x = "Date", y = "RECO") +
+#   theme_classic() + 
+#   theme(panel.background = element_rect(color = "black"))
+# 
+# ggplot(total_ts_ms, aes(x = date_object, y = NEE_VUT_REF, color = site)) + 
+#   geom_point(size = 0.1, alpha = 0.1) +
+#   geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
+#   geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
+#   facet_grid(vars(IGBP)) + 
+#   labs(x = "Date", y = "NEE") +
+#   theme_classic() + 
+#   theme(panel.background = element_rect(color = "black"))
+# 
+
+
 
 #calculating z-scores for each 
 total_ts_z <- total_ts_ms %>%
@@ -486,49 +765,6 @@ ggplot(total_ts_z, aes(x = date_object, y = NEE_z, color = NEE_sign)) +
   theme(panel.background = element_rect(color = "black"))
 
 
-#Jittered box plots 
-
-# Set up for box plots
-total_ts_box <- total_ts_z %>%
-  mutate(
-    year = lubridate::year(date_object),
-    NEE_sign = factor(
-      ifelse(NEE_VUT_REF < 0, "Sink (NEE < 0)", "Source (NEE ≥ 0)"),
-      levels = c("Sink (NEE < 0)", "Source (NEE ≥ 0)")
-    )
-  )
-
-# count the number of sites in the sample
-site_counts <- total_ts_box %>%
-  group_by(year, IGBP) %>%
-  summarize(n_sites = n_distinct(site), .groups = "drop")
-
-
-ggplot(total_ts_box, aes(x = factor(year), y = NEE_VUT_REF)) +
-  geom_boxplot(outlier.shape = NA, fill = "grey80", alpha = 0.5) +
-  geom_jitter(aes(color = NEE_sign), size = 0.3, alpha = 0.15, width = 0.25) +
-  geom_text(
-    data = site_counts,
-    aes(x = factor(year), y = Inf, label = paste0(n_sites)),
-    inherit.aes = FALSE,
-    vjust = 1.2,
-    size = 3
-  ) +
-  scale_color_manual(
-    name = "NEE Sign",
-    values = c("Sink (NEE < 0)" = "#1b9e77", "Source (NEE ≥ 0)" = "#d95f02")
-  ) +
-  facet_grid(vars(IGBP)) +
-  labs(
-    x = "Year",
-    y = "NEE (μmol m⁻² s⁻¹)",
-    title = "Annual NEE Distribution with Site Counts"
-  ) +
-  theme_classic() +
-  theme(
-    panel.background = element_rect(color = "black"),
-    axis.text.x = element_text(angle = 45, hjust = 1)
-  )
 
 
 #' 
