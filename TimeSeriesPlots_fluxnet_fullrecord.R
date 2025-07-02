@@ -13,12 +13,13 @@ library(ggplot2)
 library(amerifluxr)
 library(ggnewscale)
 library(forcats)
+library(minpack.lm) #for phenology code
 
 
 # ------------------------
 # Example Usage
 # ------------------------
-analysis_mode <- "annual"
+analysis_mode <- "daily"
 
 # ------------------------
 # Configuration
@@ -26,8 +27,19 @@ analysis_mode <- "annual"
 config <- list(
   daily_cache = "data/multiple_sites_daily.rds",
   annual_cache = "data/multiple_sites_annual.rds",
-  columns_to_clean = c("GPP_NT_VUT_REF", "RECO_NT_VUT_REF", "NEE_VUT_REF", "LE_F_MDS", "H_F_MDS")
+  columns_to_clean = c("GPP_NT_VUT_REF", "RECO_NT_VUT_REF", "NEE_VUT_REF", "LE_F_MDS", "H_F_MDS", "PPFD_IN", "TA_F_MDS")
 )
+
+# ###### Check data -9999s
+# total_rows <- nrow(daily_data)
+# filled_daily <- map(
+#   daily_data, 
+#   ~ {
+#     n_bad <- sum(.x == -9999, na.rm = TRUE)
+#     c(n_bad = n_bad,
+#       fraction = n_bad / total_rows)
+#   }
+# )
 
 # ------------------------
 # Utility functions
@@ -767,8 +779,156 @@ illustrate_integral_smoothing_example <- function(daily_data, flux_var = "GPP_NT
   illustrate_integral_smoothing(daily_data, site_id = example$site, year = example$year, flux_var = flux_var)
 }
 
+# This is in development - I 'm trying to replicate an analysis from Bowling et al 2024 
+# https://agupubs.onlinelibrary.wiley.com/doi/pdf/10.1029/2023JG007839
+# However it relies on hourly data and I was trying to fudge it with daily data. 
+# detect_phenology_light_response <- function(daily_data, 
+#                                             par_var = "PPFD_IN", 
+#                                             nee_var = "NEE_VUT_REF", 
+#                                             night_threshold = 20,
+#                                             site_list = NULL) {
+#   library(dplyr)
+#   library(lubridate)
+#   library(tidyr)
+#   library(minpack.lm)
+#   library(purrr)
+#   
+#   # Ensure required columns exist
+#   required_vars <- c("site", "date_object", "LOCATION_LAT", nee_var, par_var)
+#   stopifnot(all(required_vars %in% names(daily_data)))
+#   
+#   # Filter to selected sites if site_list is provided
+#   if (!is.null(site_list)) {
+#     daily_data <- daily_data %>% filter(site %in% site_list)
+#   }
+#   
+#   daily_data <- daily_data %>%
+#     mutate(
+#       year = year(date_object),
+#       DOY = yday(date_object),
+#       is_night = .data[[par_var]] < night_threshold
+#     )
+#   
+#   unique_sites <- unique(daily_data$site)
+#   results_list <- list()
+#   issues_list <- list()
+#   
+#   for (site_id in unique_sites) {
+#     site_data <- daily_data %>% filter(site == site_id)
+#     site_lat <- site_data$LOCATION_LAT[1]
+#     unique_years <- sort(unique(site_data$year))
+#     
+#     for (yr in unique_years) {
+#       yr_data <- site_data %>% filter(year == yr)
+#       if (nrow(yr_data) < 100) next
+#       
+#       # 5-day moving window
+#       window_results <- list()
+#       window_days <- sort(unique(yr_data$DOY))
+#       
+#       for (start_day in window_days) {
+#         days <- seq(start_day, start_day + 4)
+#         win_data <- yr_data %>% filter(DOY %in% days)
+#         
+#         if (nrow(win_data) < 20) next
+#         
+#         # Estimate nighttime Reco as mean NEE when PAR is low
+#         reco <- win_data %>% filter(is_night) %>% pull(.data[[nee_var]]) %>% mean(na.rm = TRUE)
+#         if (is.na(reco)) next
+#         
+#         # Estimate GPP
+#         win_data <- win_data %>%
+#           mutate(GPP_est = reco - .data[[nee_var]]) %>%
+#           filter(!is.na(GPP_est), GPP_est > 0, .data[[par_var]] > 0)
+#         
+#         if (nrow(win_data) < 10) next
+#         
+#         # Fit light response curve: GPP = (a * PAR)/(1 + b * PAR), with b fixed
+#         b_fixed <- 0.002
+#         tryCatch({
+#           model <- nlsLM(GPP_est ~ (a * .data[[par_var]]) / (1 + b_fixed * .data[[par_var]]),
+#                          data = win_data,
+#                          start = list(a = max(win_data$GPP_est, na.rm = TRUE)),
+#                          control = nls.lm.control(maxiter = 100))
+#           a_fit <- coef(model)[["a"]]
+#           gpp1800 <- (a_fit * 1800) / (1 + b_fixed * 1800)
+#           
+#           midpoint_day <- median(win_data$DOY)
+#           window_results[[length(window_results) + 1]] <- tibble(
+#             site = site_id,
+#             year = yr,
+#             DOY = midpoint_day,
+#             GPP1800 = gpp1800
+#           )
+#         }, error = function(e) {})
+#       }
+#       
+#       # Compile and fit logistic curves to GPP1800 time series
+#       gpp_ts <- bind_rows(window_results)
+#       if (nrow(gpp_ts) < 30) {
+#         issues_list[[length(issues_list) + 1]] <- tibble(site = site_id, year = yr, reason = "Insufficient data for logistic fit")
+#         next
+#       }
+#       
+#       tryCatch({
+#         gpp_ts <- gpp_ts %>% arrange(DOY)
+#         
+#         # Spring logistic fit
+#         spring <- gpp_ts %>% filter(DOY <= 180)
+#         fall   <- gpp_ts %>% filter(DOY > 180)
+#         
+#         fit_logistic <- function(df) {
+#           nlsLM(GPP1800 ~ A / (1 + exp(-(DOY - x0)/k)),
+#                 data = df,
+#                 start = list(A = max(df$GPP1800), x0 = median(df$DOY), k = 10),
+#                 control = nls.lm.control(maxiter = 500))
+#         }
+#         
+#         spring_fit <- fit_logistic(spring)
+#         fall_fit <- fit_logistic(fall)
+#         
+#         predict_logistic <- function(fit, days) {
+#           A <- coef(fit)[["A"]]
+#           x0 <- coef(fit)[["x0"]]
+#           k <- coef(fit)[["k"]]
+#           A / (1 + exp(-(days - x0)/k))
+#         }
+#         
+#         doy_seq <- 1:365
+#         gpp_spring <- predict_logistic(spring_fit, doy_seq)
+#         gpp_fall <- predict_logistic(fall_fit, doy_seq)
+#         
+#         # Merge spring and fall
+#         gpp_all <- tibble(DOY = doy_seq,
+#                           GPP1800 = ifelse(DOY <= 180, gpp_spring, gpp_fall))
+#         
+#         max_gpp <- max(gpp_all$GPP1800, na.rm = TRUE)
+#         threshold <- 0.25 * max_gpp
+#         
+#         SOS <- gpp_all %>% filter(DOY <= 180, GPP1800 >= threshold) %>% slice_head(n = 1)
+#         EOS <- gpp_all %>% filter(DOY > 180, GPP1800 <= threshold) %>% slice_head(n = 1)
+#         
+#         results_list[[length(results_list) + 1]] <- tibble(
+#           site = site_id,
+#           year = yr,
+#           SOS_light = SOS$DOY,
+#           EOS_light = EOS$DOY
+#         )
+#       }, error = function(e) {
+#         issues_list[[length(issues_list) + 1]] <- tibble(site = site_id, year = yr, reason = "Logistic fit failed")
+#       })
+#     }
+#   }
+#   
+#   return(list(
+#     phenology_df = bind_rows(results_list),
+#     issues_df = bind_rows(issues_list)
+#   ))
+# }
+# 
+# light_response_result <- detect_phenology_light_response(daily_data)
 
-daily_data <- load_and_clean_daily_data()
+#daily_data <- load_and_clean_daily_data()
 plot_seasonal_cycle(daily_data, flux_var = "GPP_NT_VUT_REF", y_mode = "full")
 
 
