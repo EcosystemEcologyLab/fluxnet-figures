@@ -41,6 +41,30 @@ config <- list(
 #   }
 # )
 
+
+my_15_colors <- c(
+  # 9 colors from “Set1”
+  "#E41A1C", "#377EB8", "#4DAF4A", "#984EA3",
+  "#FF7F00", "#FFFF33", "#A65628", "#F781BF",
+  "#999999",
+  # 6 additional from “Set3”
+  "#66C2A5", "#000070", "#8DA0CB",
+  "#E78AC3", "#A6D854", "#FFD92F"
+)
+
+my_16_colors <- c(
+  # 9 colors from “Set1”
+  "#E41A1C", "#377EB8", "#4DAF4A", "#984EA3",
+  "#FF7F00", "#FFFF33", "#A65628", "#F781BF",
+  "#999999",
+  # 6 additional from “Set3”
+  "#66C2A5", "#000070", "#8DA0CB",
+  "#E78AC3", "#A6D854", "#FFD92F","#C7C7C7"
+)
+
+my_15_shapes <- c(1:15)
+my_16_shapes <- c(1:16)
+
 # ------------------------
 # Utility functions
 # ------------------------
@@ -263,6 +287,69 @@ plot_flux_box_by_group <- function(annual_data, flux_var = "NEE_VUT_REF", y_mode
 }
 
 
+
+#' plot_flux_timeseries_by_igbp: Plot median annual fluxes with 95% CI by IGBP over time
+#'
+#' @param annual_data A data frame containing annual flux summaries with columns 'site', 'TIMESTAMP', and flux variables.
+#' @param flux_var The name of the flux variable to plot. Options: 'NEE_VUT_REF', 'GPP_NT_VUT_REF', 'RECO_NT_VUT_REF', 'LE_F_MDS', or 'WUE'.
+#'
+#' @return A ggplot object showing median flux and 95% CI over time, faceted by IGBP class.
+plot_flux_timeseries_by_igbp <- function(annual_data, flux_var = "NEE_VUT_REF") {
+  library(dplyr)
+  library(ggplot2)
+  
+  # Define IGBP groupings and order
+  group1 <- c("DBF", "ENF", "MF", "EBF")
+  group2 <- c("OSH", "CSH", "WSA", "SAV")
+  group3 <- c("GRA", "CRO", "WET")
+  igbp_levels <- c(group1, group2, group3)
+  
+  # Add FLUX column and reorder IGBP
+  annual_data <- annual_data %>%
+    mutate(
+      FLUX = if (flux_var == "WUE") GPP_NT_VUT_REF / LE_F_MDS else .data[[flux_var]],
+      year = as.numeric(TIMESTAMP),
+      IGBP = factor(IGBP, levels = igbp_levels)  # control facet order
+    )
+  
+  # Compute summary stats
+  ts_summary <- annual_data %>%
+    group_by(IGBP, year) %>%
+    summarise(
+      median_flux = median(FLUX, na.rm = TRUE),
+      lower_CI    = quantile(FLUX, 0.025, na.rm = TRUE),
+      upper_CI    = quantile(FLUX, 0.975, na.rm = TRUE),
+      .groups     = "drop"
+    )
+  
+  # Y-axis label
+  y_label <- case_when(
+    flux_var == "NEE_VUT_REF"     ~ "NEE (µmol m-2 s-1)",
+    flux_var == "GPP_NT_VUT_REF"  ~ "GPP (µmol m-2 s-1)",
+    flux_var == "RECO_NT_VUT_REF" ~ "Reco (µmol m-2 s-1)",
+    flux_var == "LE_F_MDS"        ~ "LE (W m-2)",
+    flux_var == "WUE"             ~ "WUE (GPP / LE)",
+    TRUE                          ~ flux_var
+  )
+  
+  # Plot with ordered facets
+  ggplot(ts_summary, aes(x = year, y = median_flux)) +
+    geom_ribbon(aes(ymin = lower_CI, ymax = upper_CI),
+                fill = "steelblue", alpha = 0.3) +
+    geom_line(color = "steelblue", size = 1) +
+    facet_wrap(~ IGBP, scales = "free_y", ncol = 4) +
+    labs(
+      x = "Year",
+      y = y_label,
+      title = paste("Median", y_label, "\u00b195% CI by Year & IGBP")
+    ) +
+    theme_classic(base_size = 14)
+}
+
+
+
+
+
 interannual_climate_summary <- function(annual_data) {
   annual_data %>%
     group_by(site) %>%
@@ -399,6 +486,10 @@ if (analysis_mode == "daily") {
 }
 
 
+
+
+
+
 # ------------------------
 # 📘 Usage Notes: Annual Workflow & Plotting
 # ------------------------
@@ -442,7 +533,7 @@ if (analysis_mode == "daily") {
 # ------------------------------------------------------------------
 
 plots <- plot_annual_fluxnet_data(annual_data) 
-boxplots <- plot_nee_box_by_group(annual_data)
+boxplots <- plot_flux_box_by_group(annual_data)
 print(plots$precip_vs_nee)
 # For NEE
 plot_latitudinal_flux(annual_data, site_metadata, flux_var = "NEE_VUT_REF")
@@ -460,21 +551,6 @@ PlotXY_annual(annual_data, x_var = "NEE_VUT_REF", y_var = "LE_F_MDS")
 # ##############################
 # Daily data analysis and plotting
 # ##############################
-
-# ------------------------
-# Daily Plot: Seasonal Climatology by IGBP Group
-# ------------------------
-# ------------------------
-# Daily Plot: Seasonal Climatology by IGBP Group
-# ------------------------
-
-# ------------------------
-# Daily Plot: Seasonal Climatology by IGBP Group
-# ------------------------
-
-# ------------------------
-# Daily Plot: Seasonal Climatology by IGBP Group
-# ------------------------
 
 # ------------------------
 # Daily Plot: Seasonal Climatology by IGBP Group
@@ -584,6 +660,76 @@ plot_seasonal_cycle <- function(daily_data, flux_var = "GPP_NT_VUT_REF", y_mode 
     GrassCropsWet = plot_group(daily_data, "Grass/Crops/Wet"),
     Other = plot_group(daily_data, "Other")
   )
+}
+
+# ------------------------
+# WorldClim Comparison: Temperature and Precipitation
+# ------------------------
+
+compare_worldclim_siteclimate <- function(annual_data, site_metadata) {
+  library(ggplot2)
+  library(dplyr)
+  library(terra)
+  
+  wc <- readRDS("data/wc_worldclim_30s.rds")
+  
+  site_summary <- annual_data %>%
+    group_by(site) %>%
+    summarise(
+      MAT = mean(TA_F, na.rm = TRUE),
+      MAP = mean(P_F, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    left_join(site_metadata, by = c("site" = "SITE_ID"))
+  
+  site_pts <- terra::vect(site_summary, geom = c("LOCATION_LONG", "LOCATION_LAT"), crs = "EPSG:4326")
+  wc_extract <- terra::extract(wc[[c(1, 12)]], site_pts)
+  
+  site_summary$MAT_WorldClim <- wc_extract[["wc2.1_30s_bio_1"]] / 10
+  site_summary$MAP_WorldClim <- wc_extract[["wc2.1_30s_bio_12"]]
+  
+  my_16_colors <- c(
+    "#E41A1C", "#377EB8", "#4DAF4A", "#984EA3",
+    "#FF7F00", "#FFFF33", "#A65628", "#F781BF",
+    "#999999", "#66C2A5", "#000070", "#8DA0CB",
+    "#E78AC3", "#A6D854", "#FFD92F", "#C7C7C7"
+  )
+  
+  mat_plot <- ggplot(site_summary, aes(x = MAT, y = MAT_WorldClim)) +
+    geom_point(aes(color = IGBP), size = 3, alpha = 0.7) +
+    scale_color_manual(values = my_16_colors) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    labs(
+      x = "Site Mean Annual Temperature (°C)",
+      y = "WorldClim MAT (°C)",
+      title = "Site vs WorldClim Mean Annual Temperature"
+    ) +
+    theme_classic()
+  
+  map_plot <- ggplot(site_summary, aes(x = MAP, y = MAP_WorldClim)) +
+    geom_point(aes(color = IGBP), size = 3, alpha = 0.7) +
+    scale_color_manual(values = my_16_colors) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    scale_x_log10() +
+    scale_y_log10() +
+    labs(
+      x = "Site Mean Annual Precipitation (mm)",
+      y = "WorldClim MAP (mm)",
+      title = "Site vs WorldClim Mean Annual Precipitation"
+    ) +
+    theme_classic()
+  
+  summary_stats <- site_summary %>%
+    summarise(
+      cor_MAT = cor(MAT, MAT_WorldClim, use = "complete.obs"),
+      cor_MAP = cor(MAP, MAP_WorldClim, use = "complete.obs")
+    )
+  
+  return(list(
+    mat_plot = mat_plot,
+    map_plot = map_plot,
+    summary = summary_stats
+  ))
 }
 
 # ------------------------
@@ -718,46 +864,82 @@ detect_phenology_integral <- function(daily_data, knots = 10, flux_var = "GPP_NT
 }
 
 
-# Time series plot of SOS, POS, EOS by IGBP group
-plot_phenology_timeseries <- function(phenology_df, site_metadata) {
-  phenology_df <- phenology_df %>%
+# ------------------------
+# Phenology Timeseries and Metric Scatter Visualization
+# ------------------------
+
+plot_phenology_timeseries <- function(phenology_df, issues_df, site_metadata, metric = "LOS", comparison_var = "MAT") {
+  library(dplyr)
+  library(ggplot2)
+  
+  my_16_colors <- c(
+    "#E41A1C", "#377EB8", "#4DAF4A", "#984EA3",
+    "#FF7F00", "#FFFF33", "#A65628", "#F781BF",
+    "#999999", "#66C2A5", "#000070", "#8DA0CB",
+    "#E78AC3", "#A6D854", "#FFD92F", "#C7C7C7"
+  )
+  
+  group1 <- c("DBF", "ENF", "MF", "EBF")
+  group2 <- c("OSH", "CSH", "WSA", "SAV")
+  group3 <- c("GRA", "CRO", "WET")
+  
+  phen_clean <- phenology_df %>%
+    left_join(issues_df %>% select(-SOS, -POS, -EOS), by = c("site", "year")) %>%
     left_join(site_metadata, by = c("site" = "SITE_ID")) %>%
-    mutate(
-      IGBP_group = case_when(
-        IGBP %in% c("DBF", "ENF", "MF", "EBF") ~ "Forest",
-        IGBP %in% c("OSH", "CSH", "WSA", "SAV") ~ "Shrub/Opens",
-        IGBP %in% c("GRA", "CRO", "WET") ~ "Grass/Crops/Wet",
-        TRUE ~ "Other"
-      )
+    mutate(LOS = EOS - SOS) %>%
+    filter(is.na(reason) | reason == "keep") %>%
+    mutate(IGBP_group = case_when(
+      IGBP %in% group1 ~ "1_Forest",
+      IGBP %in% group2 ~ "2_Shrub/Opens",
+      IGBP %in% group3 ~ "3_Grass/Crops/Wet",
+      TRUE ~ "4_Other"
+    ))
+  
+  if (!metric %in% c("LOS", "SOS", "POS", "EOS")) stop("Invalid metric.")
+  
+  ts_summary <- phen_clean %>%
+    group_by(IGBP, IGBP_group, year) %>%
+    summarise(
+      median_value = median(.data[[metric]], na.rm = TRUE),
+      lower_CI     = quantile(.data[[metric]], 0.025, na.rm = TRUE),
+      upper_CI     = quantile(.data[[metric]], 0.975, na.rm = TRUE),
+      .groups      = "drop"
     )
   
-  phenology_long <- phenology_df %>%
-    pivot_longer(cols = c(SOS, POS, EOS), names_to = "phase", values_to = "DOY")
+  p1 <- ggplot(ts_summary, aes(x = year, y = median_value)) +
+    geom_ribbon(aes(ymin = lower_CI, ymax = upper_CI), fill = "steelblue", alpha = 0.3) +
+    geom_line(color = "steelblue", size = 1) +
+    scale_x_continuous(breaks = scales::pretty_breaks(n = 8)) +
+    facet_wrap(~ reorder(IGBP, IGBP_group), scales = "free_y", ncol = 4) +
+    labs(x = "Year", y = metric, title = paste("Median", metric, "±95% CI by Year & IGBP")) +
+    theme_classic(base_size = 14)
   
-  plot_list <- list()
-  for (p in unique(phenology_long$phase)) {
-    phase_data <- phenology_long %>% filter(phase == p)
-    
-    for (grp in unique(phenology_long$IGBP_group)) {
-      group_data <- phase_data %>% filter(IGBP_group == grp)
-      p_plot <- ggplot(group_data, aes(x = year, y = DOY, color = IGBP)) +
-        geom_point(alpha = 0.5, size = 1) +
-        geom_smooth(method = "loess", span = 0.3, se = FALSE) +
-        facet_wrap(~ IGBP, scales = "free_y") +
-        labs(
-          title = paste0(p, " Timing in ", grp, " Group"),
-          x = "Year",
-          y = "Day of Year"
-        ) +
-        theme_classic(base_size = 14) +
-        theme(
-          panel.background = element_rect(color = "black"),
-          axis.text.x = element_text(angle = 45, hjust = 1)
-        )
-      plot_list[[paste(p, grp, sep = "_")]] <- p_plot
-    }
+  p2 <- ggplot(phen_clean, aes(x = factor(year), y = .data[[metric]])) +
+    geom_boxplot(outlier.shape = NA, fill = "lightgray", color = "black", alpha = 0.6) +
+    geom_jitter(width = 0.2, size = 0.8, alpha = 0.5) +
+    scale_x_discrete(breaks = function(x) x[as.integer(x) %% 5 == 0]) +
+    facet_wrap(~ reorder(IGBP, IGBP_group), scales = "free_y", ncol = 4) +
+    labs(x = "Year", y = metric, title = paste(metric, "Distribution by Year & IGBP")) +
+    theme_classic(base_size = 14) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  
+  if (!comparison_var %in% names(phen_clean)) {
+    warning(paste("Comparison variable", comparison_var, "not found in merged dataset."))
+    p3 <- NULL
+  } else {
+    phen_clean <- phen_clean %>% filter(!is.na(.data[[comparison_var]]))
+    p3 <- ggplot(phen_clean, aes(x = .data[[comparison_var]], y = .data[[metric]])) +
+      geom_point(aes(color = IGBP), size = 2, alpha = 0.7) +
+      scale_color_manual(values = my_16_colors) +
+      labs(
+        x = comparison_var,
+        y = metric,
+        title = paste(metric, "vs", comparison_var)
+      ) +
+      theme_minimal()
   }
-  return(plot_list)
+  
+  return(list(time_series_plot = p1, boxplot = p2, scatterplot = p3))
 }
 
 
@@ -933,34 +1115,41 @@ plot_seasonal_cycle(daily_data, flux_var = "GPP_NT_VUT_REF", y_mode = "full")
 
 
 # # Run the phenology detection on your daily data
-# phen_results <- detect_phenology_integral(
-#   daily_data = daily_data,
-#   knots = 10,
-#   flux_var = "GPP_NT_VUT_REF"
-# )
+phen_results <- detect_phenology_integral(
+  daily_data = daily_data,
+  knots = 10,
+  flux_var = "GPP_NT_VUT_REF"
+)
+daily_data$NE
 
 
 # 
 # # The result is a list with two data frames:
-# phenology_df <- phen_results$phenology_df
-# issues_df    <- phen_results$issues_df
+phenology_df <- phen_results$phenology_df
+issues_df    <- phen_results$issues_df
 # 
 # illustrate_integral_smoothing_example(daily_data = daily_data)
 # # View successful phenology estimates
-# head(phenology_df)
+ head(phenology_df)
 # 
 # # View records where phenology estimation failed or was suspicious
-# head(issues_df)
+ head(issues_df)
 # 
 # # Optional: filter and inspect just order violations
-# issues_df %>% filter(reason == "Order violation (SOS >= POS or POS >= EOS)")
+ issues_df %>% filter(reason == "Order violation (SOS >= POS or POS >= EOS)")
 # # Plot the time series for SOS, POS, EOS grouped by IGBP type
-# phen_plots <- plot_phenology_timeseries(phenology_df, site_metadata)
+ phen_plots <- plot_phenology_timeseries(phenology_df, site_metadata)
 
 
 # Example: Show the POS timing for Forest group
-print(phen_plots$EOS_Forest)
+print(phen_plots$SOS_Forest)
 
+
+plot_flux_timeseries_by_igbp(annual_data, flux_var = "LE_F_MDS")
+plot_flux_timeseries_by_igbp(annual_data, flux_var = "NEE_VUT_REF")
+plot_flux_timeseries_by_igbp(annual_data, flux_var = "RECO_NT_VUT_REF")
+plot_flux_timeseries_by_igbp(annual_data, flux_var = "GPP_NT_VUT_REF")
+plot_flux_timeseries_by_igbp(annual_data, flux_var = "WUE")
 
 
 
