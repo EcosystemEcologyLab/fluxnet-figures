@@ -44,7 +44,9 @@ devtools::install_github("valentinitnelav/plotbiomes")
 ### Read in libraries {.unnumbered .unlisted}
 
 ```{r}
+#| label: setup
 #| output: false
+
 library(dplyr)
 library(lubridate)
 library(ggplot2)
@@ -57,6 +59,9 @@ library(plotbiomes)
 library(measurements)
 library(ggnewscale)
 library(fs)
+
+#set default ggplot2 theme
+theme_set(theme_classic())
 ```
 
 ### Download site metadata {.unnumbered .unlisted}
@@ -313,8 +318,7 @@ ggplot(total_ts_gpp, aes(x = date_object, y = GPP_NT_VUT_REF)) +
   geom_point(size = 0.5, color = "darkgrey") +
   geom_line(aes(y = running_mean_gpp), color = "blue", lwd = 1) +
   geom_vline(xintercept = yr_start_dates, color = "grey", alpha = 0.5) +
-  labs(x = "Date", y = "GPP (smoothed)") +
-  theme_classic()
+  labs(x = "Date", y = "GPP (smoothed)")
 
 total_ts_reco <- single_site_daily %>%
   mutate(
@@ -329,8 +333,7 @@ ggplot(total_ts_reco, aes(x = date_object, y = RECO_NT_VUT_REF)) +
   geom_point(size = 0.5, color = "darkgrey") +
   geom_line(aes(y = running_mean_reco), color = "blue", lwd = 1) +
   geom_vline(xintercept = yr_start_dates, color = "grey", alpha = 0.5) +
-  labs(x = "Date", y = "RECO (smoothed)") +
-  theme_classic()
+  labs(x = "Date", y = "RECO (smoothed)")
 
 total_ts_nee <- single_site_daily %>%
   mutate(
@@ -345,8 +348,7 @@ ggplot(total_ts_nee, aes(x = date_object, y = NEE_VUT_REF)) +
   geom_point(size = 0.5, color = "darkgrey") +
   geom_line(aes(y = running_mean_nee), color = "blue", lwd = 1) +
   geom_vline(xintercept = yr_start_dates, color = "grey", alpha = 0.5) +
-  labs(x = "Date", y = "NEE (smoothed)") +
-  theme_classic()
+  labs(x = "Date", y = "NEE (smoothed)")
 ```
 
 ### Entire time series (multiple sites)
@@ -396,7 +398,6 @@ ggplot(
   facet_grid(vars(IGBP)) +
   guides(colour = guide_legend(override.aes = list(alpha = 1))) +
   labs(x = "Date", y = "GPP") +
-  theme_classic() +
   theme(panel.background = element_rect(color = "black"))
 
 ggplot(
@@ -409,12 +410,11 @@ ggplot(
   facet_grid(vars(IGBP)) +
   guides(colour = guide_legend(override.aes = list(alpha = 1))) +
   labs(x = "Date", y = "RECO") +
-  theme_classic() +
   theme(panel.background = element_rect(color = "black"))
 
 ggplot(
   total_ts_ms,
-  aes(x = date_object, y = NEE_VUT_REF, color = site, color = fill)
+  aes(x = date_object, y = NEE_VUT_REF, color = site, fill = site)
 ) +
   geom_point(size = 0.1, alpha = 0.1, key_glyph = draw_key_rect) +
   geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
@@ -422,7 +422,6 @@ ggplot(
   facet_grid(vars(IGBP)) +
   guides(colour = guide_legend(override.aes = list(alpha = 1))) +
   labs(x = "Date", y = "NEE") +
-  theme_classic() +
   theme(panel.background = element_rect(color = "black"))
 ```
 
@@ -437,7 +436,6 @@ ggplot(total_ts_ms, aes(x = date_object, y = running_mean_gpp, color = site)) +
   geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
   facet_grid(vars(IGBP)) +
   labs(x = "Date", y = "GPP (smoothed)") +
-  theme_classic() +
   theme(panel.background = element_rect(color = "black"))
 
 ggplot(total_ts_ms, aes(x = date_object, y = running_mean_reco, color = site)) +
@@ -446,7 +444,6 @@ ggplot(total_ts_ms, aes(x = date_object, y = running_mean_reco, color = site)) +
   geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
   facet_grid(vars(IGBP)) +
   labs(x = "Date", y = "RECO (smoothed)") +
-  theme_classic() +
   theme(panel.background = element_rect(color = "black"))
 
 ggplot(total_ts_ms, aes(x = date_object, y = running_mean_nee, color = site)) +
@@ -455,7 +452,6 @@ ggplot(total_ts_ms, aes(x = date_object, y = running_mean_nee, color = site)) +
   geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
   facet_grid(vars(IGBP)) +
   labs(x = "Date", y = "NEE (smoothed)") +
-  theme_classic() +
   theme(panel.background = element_rect(color = "black"))
 ```
 
@@ -807,7 +803,6 @@ ggplot(
   geom_abline(slope = 2, linetype = "dotted", color = "darkgrey") +
   geom_abline(slope = 3, linetype = "dotted", color = "darkgrey") +
   labs(x = "Latent Heat Flux (W m-2)", y = "Sensible Heat Flux (W m-2)") +
-  theme_classic() +
   guides(x.sec = "axis", y.sec = "axis") +
   theme(
     axis.ticks.x.top = element_blank(),
@@ -870,11 +865,9 @@ ggplot() +
     aes(x = mean_temp, y = mean_precip_cm, color = IGBP)
   ) +
   scale_color_brewer(palette = "Set1") +
-  labs(x = "Temperature (C)", y = "Precipitation (cm y-1)") +
-  theme_classic()
-`
-`
-`
+  labs(x = "Temperature (C)", y = "Precipitation (cm y-1)")
+```
+
 ::: {.callout-tip}
 ## Questions
 
@@ -897,11 +890,7 @@ The energy flux variables are listed below. The ones that have multiple possible
 
 Parsing dates and times: 
 
-`
-``
-{
-  r
-}
+```{r}
 rad_dt <- single_site_hourly %>%
   mutate(
     date_object = ymd_hm(TIMESTAMP_START),
