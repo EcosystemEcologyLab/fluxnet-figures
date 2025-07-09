@@ -731,6 +731,7 @@ ggplot(
   geom_point() +
   geom_line() +
   facet_grid(rows = vars(pro_label), cols = vars(met_label), scales = "free") +
+  theme_bw() +
   labs(x = "", y = "")
 ```
 
@@ -760,11 +761,13 @@ Visual check of heat flux variable ranges.
 #| message: false
 ggplot(multiple_sites_daily, aes(x = LE_F_MDS)) +
   geom_histogram() +
-  facet_wrap(~site)
+  facet_wrap(~site) +
+  theme_bw()
 
 ggplot(multiple_sites_daily, aes(x = H_F_MDS)) +
   geom_histogram() +
-  facet_wrap(~site)
+  facet_wrap(~site) +
+  theme_bw()
 ```
 
 Show average daily summer-only sensible vs latent heat flux (i.e., Bowen ratio) for multiple sites with different vegetation types. Bowen ratios of 3, 2, 1, 0.5, and 0.25 shown by dotted lines. 
@@ -797,11 +800,11 @@ ggplot(
   aes(x = latent_heat_flux, y = sensible_heat_flux, color = IGBP)
 ) +
   geom_point(size = 3) +
-  geom_abline(slope = 0.25, linetype = "dotted", color = "darkgrey") +
-  geom_abline(slope = 0.5, linetype = "dotted", color = "darkgrey") +
-  geom_abline(slope = 1, linetype = "dotted", color = "darkgrey") +
-  geom_abline(slope = 2, linetype = "dotted", color = "darkgrey") +
-  geom_abline(slope = 3, linetype = "dotted", color = "darkgrey") +
+  geom_abline(
+    slope = c(0.25, 0.5, 1, 2, 3),
+    linetype = "dotted",
+    color = "darkgrey"
+  ) +
   labs(x = "Latent Heat Flux (W m-2)", y = "Sensible Heat Flux (W m-2)") +
   guides(x.sec = "axis", y.sec = "axis") +
   theme(
