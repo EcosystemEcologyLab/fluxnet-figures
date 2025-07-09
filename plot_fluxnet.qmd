@@ -858,11 +858,18 @@ Show mean annual precipitation and temperature of each site over Whittaker biome
 ggplot() +
   geom_polygon(
     data = Whittaker_biomes,
-    aes(x = temp_c, y = precp_cm, color = biome),
-    fill = "white"
+    aes(x = temp_c, y = precp_cm, fill = biome),
+    # fill = "white"
+    alpha = 0.4
   ) +
-  scale_color_brewer(palette = "BrBG") +
-  new_scale_color() +
+  # scale_fill_brewer(palette = "BrBG") +
+  scale_fill_manual(
+    name = "Whittaker biomes",
+    breaks = names(Ricklefs_colors),
+    labels = names(Ricklefs_colors),
+    values = Ricklefs_colors
+  ) +
+  # new_scale_color() +
   geom_point(
     data = whittaker_format,
     aes(x = mean_temp, y = mean_precip_cm, color = IGBP)
