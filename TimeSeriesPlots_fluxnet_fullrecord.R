@@ -14,12 +14,11 @@ library(amerifluxr)
 library(ggnewscale)
 library(forcats)
 library(minpack.lm) #for phenology code
-
-
+library(patchwork)
 # ------------------------
 # Example Usage
 # ------------------------
-analysis_mode <- "daily"
+analysis_mode <- "anual"
 
 # ------------------------
 # Configuration
@@ -27,37 +26,21 @@ analysis_mode <- "daily"
 config <- list(
   daily_cache = "data/multiple_sites_daily.rds",
   annual_cache = "data/multiple_sites_annual.rds",
-  columns_to_clean = c("GPP_NT_VUT_REF", "RECO_NT_VUT_REF", "NEE_VUT_REF", "LE_F_MDS", "H_F_MDS", "PPFD_IN", "TA_F_MDS")
+  columns_to_clean = c("GPP_NT_VUT_REF", "GPP_DT_VUT_REF", "RECO_NT_VUT_REF", "NEE_VUT_REF", "LE_F_MDS", "H_F_MDS", "PPFD_IN", "TA_F_MDS")
 )
 
-# ###### Check data -9999s
-# total_rows <- nrow(daily_data)
-# filled_daily <- map(
-#   daily_data, 
-#   ~ {
-#     n_bad <- sum(.x == -9999, na.rm = TRUE)
-#     c(n_bad = n_bad,
-#       fraction = n_bad / total_rows)
-#   }
-# )
-
-
 my_15_colors <- c(
-  # 9 colors from “Set1”
   "#E41A1C", "#377EB8", "#4DAF4A", "#984EA3",
   "#FF7F00", "#FFFF33", "#A65628", "#F781BF",
   "#999999",
-  # 6 additional from “Set3”
   "#66C2A5", "#000070", "#8DA0CB",
   "#E78AC3", "#A6D854", "#FFD92F"
 )
 
 my_16_colors <- c(
-  # 9 colors from “Set1”
   "#E41A1C", "#377EB8", "#4DAF4A", "#984EA3",
   "#FF7F00", "#FFFF33", "#A65628", "#F781BF",
   "#999999",
-  # 6 additional from “Set3”
   "#66C2A5", "#000070", "#8DA0CB",
   "#E78AC3", "#A6D854", "#FFD92F","#C7C7C7"
 )
@@ -95,12 +78,18 @@ load_and_cache <- function(patterns, cache_file, extract_site_func) {
   return(data)
 }
 
-clean_fluxnet_data <- function(df, columns) {
-  df %>% mutate(across(all_of(columns), ~ ifelse(. < -9000, NA, .)))
+clean_fluxnet_data <- function(data, site_metadata) {
+  numeric_cols <- names(select(data, where(is.numeric)))
+  data_cleaned <- data %>%
+    mutate(across(all_of(numeric_cols), ~ ifelse(. < -9000, NA, .))) %>%
+    select(-any_of(names(site_metadata))) %>%
+    left_join(site_metadata, by = c("site" = "SITE_ID"))
+  return(data_cleaned)
 }
 
 add_site_metadata <- function(data, metadata) {
-  left_join(data, metadata, by = c("site" = "SITE_ID"))
+  data %>% select(-any_of(names(metadata))) %>%
+    left_join(metadata, by = c("site" = "SITE_ID"))
 }
 
 # ------------------------
@@ -148,8 +137,7 @@ site_metadata <- bind_rows(af_meta, icos_meta_clean) %>%
 load_and_clean_daily_data <- function() {
   patterns <- c("FLUXNET_FULLSET_DD.*\\.csv$", "ICOSETC_[^/]+_FLUXNET_DD_L2\\.csv$")
   daily_data <- load_and_cache(patterns, config$daily_cache, extract_site)
-  daily_data <- clean_fluxnet_data(daily_data, config$columns_to_clean)
-  daily_data <- add_site_metadata(daily_data, site_metadata)
+  daily_data <- clean_fluxnet_data(daily_data, site_metadata)
   daily_data <- daily_data %>% mutate(date_object = ymd(TIMESTAMP))
   return(daily_data)
 }
@@ -157,8 +145,7 @@ load_and_clean_daily_data <- function() {
 load_and_clean_annual_data <- function() {
   patterns <- c("FLUXNET_FULLSET_YY.*\\.csv$", "ICOSETC_[^/]+_FLUXNET_YY_L2\\.csv$")
   annual_data <- load_and_cache(patterns, config$annual_cache, extract_site)
-  annual_data <- clean_fluxnet_data(annual_data, config$columns_to_clean)
-  annual_data <- add_site_metadata(annual_data, site_metadata)
+  annual_data <- clean_fluxnet_data(annual_data, site_metadata)
   annual_data <- annual_data %>% mutate(year = TIMESTAMP)
   return(annual_data)
 }
@@ -170,13 +157,207 @@ if (analysis_mode == "daily") {
   annual_data <- load_and_clean_annual_data()
 }
 
-
-
+# Helper Function to Save Plot Lists
+save_plot_list <- function(plot_list, prefix = "plot", out_dir = "saved_plots", width = 8, height = 6) {
+  dir.create(out_dir, showWarnings = FALSE)
+  for (name in names(plot_list)) {
+    file_path <- file.path(out_dir, paste0(prefix, "_", name, ".png"))
+    ggsave(file_path, plot_list[[name]], width = width, height = height, dpi = 300)
+  }
+}
 
 
 # ------------------------
 # Annual Plotting Functions
 # ------------------------
+
+# -----------------------------
+# New: IGBP Aggregated Flux Summary
+# -----------------------------
+plot_flux_by_igbp <- function(annual_data, flux_var = "NEE_VUT_REF") {
+  igbp_order <- c("DBF", "ENF", "MF", "DNF", "EBF", "OSH", "CSH", "WSA", "SAV", "GRA", "CRO", "WET", "BSV")
+  
+  annual_data <- annual_data %>%
+    mutate(
+      FLUX = .data[[flux_var]],
+      flux_sign = factor(
+        ifelse(FLUX < 0, "Negative", "Positive"),
+        levels = c("Negative", "Positive")
+      ),
+      IGBP = factor(IGBP, levels = igbp_order)
+    )
+  
+  y_label <- case_when(
+    flux_var == "NEE_VUT_REF"     ~ "NEE (μmol m⁻² s⁻¹)",
+    flux_var == "GPP_NT_VUT_REF"  ~ "GPP (μmol m⁻² s⁻¹)",
+    flux_var == "RECO_NT_VUT_REF" ~ "Reco (μmol m⁻² s⁻¹)",
+    flux_var == "LE_F_MDS"        ~ "LE (W m⁻²)",
+    flux_var == "WUE"             ~ "WUE (GPP / LE)",
+    TRUE                          ~ flux_var
+  )
+  
+  # Boxplot with jitter
+  p_flux <- ggplot(annual_data, aes(x = IGBP, y = FLUX)) +
+    geom_boxplot(color = "black", fill = NA, outlier.shape = NA) +
+    geom_jitter(aes(color = flux_sign), width = 0.25, alpha = 0.4, size = 1) +
+    scale_color_manual(
+      values = c("Negative" = "#1b9e77", "Positive" = "#d95f02"),
+      name = paste0(y_label, " Sign")
+    ) +
+    labs(
+      x = NULL,
+      y = y_label,
+      title = paste(y_label, "Distribution by IGBP (All Years)")
+    ) +
+    theme_classic(base_size = 14) +
+    theme(
+      panel.background = element_rect(color = "black"),
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      legend.position = "bottom"
+    )
+  
+  # Median bar plot
+  summary_data <- annual_data %>%
+    group_by(IGBP) %>%
+    summarize(median_flux = median(FLUX, na.rm = TRUE), .groups = "drop") %>%
+    mutate(IGBP = factor(IGBP, levels = igbp_order))
+  
+  p_median <- ggplot(summary_data, aes(x = IGBP, y = median_flux)) +
+    geom_col(fill = "black", alpha = 0.6) +
+    labs(
+      x = NULL,
+      y = "Med"
+    ) +
+    theme_classic(base_size = 14) +
+    theme(
+      panel.background = element_rect(color = "black"),
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank()
+    )
+  
+  # Site-year count plot
+  site_counts <- annual_data %>%
+    group_by(IGBP) %>%
+    summarize(n_siteyears = n(), .groups = "drop") %>%
+    mutate(IGBP = factor(IGBP, levels = igbp_order))
+  
+  p_count <- ggplot(site_counts, aes(x = IGBP, y = n_siteyears)) +
+    geom_col(fill = "gray40", alpha = 0.7) +
+    labs(
+      x = "IGBP Class",
+      y = "#SiteYrs"
+    ) +
+    theme_classic(base_size = 14) +
+    theme(
+      panel.background = element_rect(color = "black"),
+      axis.text.x = element_text(angle = 45, hjust = 1)
+    )
+  
+  # Composite layout using patchwork
+  p_composite <- p_flux / p_median / p_count +
+    plot_layout(heights = c(0.7, 0.2, 0.1))
+  
+  list(
+    flux_plot = p_flux,
+    median_plot = p_median,
+    count_plot = p_count,
+    composite_plot = p_composite
+  )
+}
+
+# Example usage:
+p_flux_igbp <- plot_flux_by_igbp(annual_data, flux_var = "GPP_NT_CUT_REF")
+save_plot_list(p_flux_igbp, prefix = "flux_by_IGBP_GPP")
+
+# -----------------------------
+# IGBP Aggregated Flux by Time Slice (Grouped by IGBP)
+# -----------------------------
+plot_flux_by_igbp_timeslice_grouped <- function(annual_data, flux_var = "NEE_VUT_REF") {
+  igbp_order <- c("DBF", "ENF", "MF", "DNF", "EBF", "OSH", "CSH", "WSA", "SAV", "GRA", "CRO", "WET", "BSV")
+  
+  annual_data <- annual_data %>%
+    mutate(
+      FLUX = .data[[flux_var]],
+      year = as.integer(TIMESTAMP),
+      TimeSlice = cut(year,
+                      breaks = seq(1999, 2025, by = 5),
+                      labels = c("2000-2004", "2005-2009", "2010-2014", "2015-2019", "2020-2024"),
+                      right = TRUE),
+      IGBP = factor(IGBP, levels = igbp_order)
+    ) %>%
+    filter(!is.na(TimeSlice), !is.na(IGBP))
+  
+  y_label <- case_when(
+    flux_var == "NEE_VUT_REF"     ~ "NEE (μmol m⁻² s⁻¹)",
+    flux_var == "GPP_NT_VUT_REF"  ~ "GPP (μmol m⁻² s⁻¹)",
+    flux_var == "RECO_NT_VUT_REF" ~ "Reco (μmol m⁻² s⁻¹)",
+    flux_var == "LE_F_MDS"        ~ "LE (W m⁻²)",
+    flux_var == "WUE"             ~ "WUE (GPP / LE)",
+    TRUE                          ~ flux_var
+  )
+  
+  p_flux <- ggplot(annual_data, aes(x = IGBP, y = FLUX, fill = TimeSlice)) +
+    geom_boxplot(outlier.shape = NA, position = position_dodge(width = 0.75)) +
+    labs(
+      title = paste(y_label, "by IGBP and Time Slice"),
+      x = "IGBP Class",
+      y = y_label,
+      fill = "Time Slice"
+    ) +
+    theme_classic(base_size = 14) +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      panel.background = element_rect(color = "black")
+    )
+  
+  summary_data <- annual_data %>%
+    group_by(IGBP, TimeSlice) %>%
+    summarize(median_flux = median(FLUX, na.rm = TRUE), .groups = "drop")
+  
+  p_median <- ggplot(summary_data, aes(x = IGBP, y = median_flux, fill = TimeSlice)) +
+    geom_col(position = position_dodge(width = 0.75)) +
+    labs(
+      title = "Median Flux by IGBP and Time Slice",
+      x = "IGBP Class",
+      y = "Median",
+      fill = "Time Slice"
+    ) +
+    theme_classic(base_size = 14) +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      panel.background = element_rect(color = "black")
+    )
+  
+  site_counts <- annual_data %>%
+    group_by(IGBP, TimeSlice) %>%
+    summarize(n_siteyears = n(), .groups = "drop")
+  
+  p_count <- ggplot(site_counts, aes(x = IGBP, y = n_siteyears, fill = TimeSlice)) +
+    geom_col(position = position_dodge(width = 0.75)) +
+    labs(
+      title = "Site Years by IGBP and Time Slice",
+      x = "IGBP Class",
+      y = "# Site Years",
+      fill = "Time Slice"
+    ) +
+    theme_classic(base_size = 14) +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      panel.background = element_rect(color = "black")
+    )
+  
+  return(list(
+    flux_plot = p_flux,
+    median_plot = p_median,
+    count_plot = p_count
+  ))
+}
+
+p_flux_igbp_time <- plot_flux_by_igbp_timeslice(annual_data, flux_var = "GPP_NT_CUT_REF")
+save_plot_list(p_flux_igbp_time, prefix = "flux_by_IGBP_GPPTime")
+
+
 plot_annual_fluxnet_data <- function(annual_data) {
   p1 <- ggplot(annual_data, aes(x = P_F, y = NEE_VUT_REF, color = IGBP)) +
     geom_point(alpha = 0.6) +
@@ -736,6 +917,10 @@ compare_worldclim_siteclimate <- function(annual_data, site_metadata) {
 # Phenology Detection via Integral Smoothing
 # ------------------------
 
+# ------------------------
+# Phenology Detection via Integral Smoothing
+# ------------------------
+
 #' detect_phenology_integral: Estimate phenological transition dates via integral smoothing
 #'
 #' @param daily_data A dataframe with daily time series data including a 'site', 'date_object', and flux variable (e.g., GPP).
@@ -751,7 +936,6 @@ compare_worldclim_siteclimate <- function(annual_data, site_metadata) {
 #' This approach increases signal-to-noise ratio and is more robust to parameter choices than direct smoothing.
 #'
 #' Note: Requires 'date_object' as a Date column and assumes daily temporal resolution.
-
 
 detect_phenology_integral <- function(daily_data, knots = 10, flux_var = "GPP_NT_VUT_REF") {
   library(splines)
@@ -825,7 +1009,6 @@ detect_phenology_integral <- function(daily_data, knots = 10, flux_var = "GPP_NT
         POS_val <- pos$DOY[1]
         EOS_val <- eos$DOY[1]
         
-        # Track issues
         issue_reason <- NULL
         if (is.na(SOS_val) | is.na(POS_val) | is.na(EOS_val)) {
           issue_reason <- "NA in SOS/POS/EOS"
@@ -861,6 +1044,74 @@ detect_phenology_integral <- function(daily_data, knots = 10, flux_var = "GPP_NT
     phenology_df = bind_rows(phenology_results),
     issues_df = bind_rows(issues_log)
   ))
+}
+
+illustrate_integral_smoothing_example <- function(daily_data, flux_var = "GPP_NT_VUT_REF", site_id = NULL, year = NULL) {
+  if (!is.null(site_id) & !is.null(year)) {
+    return(illustrate_integral_smoothing(daily_data, site_id = site_id, year = year, flux_var = flux_var))
+  }
+  
+  valid_site_years <- daily_data %>%
+    filter(!is.na(.data[[flux_var]])) %>%
+    mutate(year = lubridate::year(date_object)) %>%
+    group_by(site, year) %>%
+    summarise(days_with_data = n(), .groups = "drop") %>%
+    filter(days_with_data >= 300)
+  
+  if (nrow(valid_site_years) == 0) {
+    warning("No valid site-years with sufficient data found.")
+    return(NULL)
+  }
+  
+  example <- valid_site_years %>% sample_n(1)
+  illustrate_integral_smoothing(daily_data, site_id = example$site, year = example$year, flux_var = flux_var)
+}
+
+illustrate_integral_smoothing <- function(daily_data, site_id, year, flux_var = "GPP_NT_VUT_REF") {
+  padded_data <- daily_data %>%
+    filter(site == site_id & lubridate::year(date_object) %in% c(year - 1, year, year + 1)) %>%
+    arrange(date_object) %>%
+    filter(!is.na(.data[[flux_var]]))
+  
+  if (nrow(padded_data) < 10) {
+    stop("Insufficient non-NA data points for spline fitting.")
+  }
+  
+  cumflux <- cumsum(padded_data[[flux_var]])
+  spline_fit <- smooth.spline(x = 1:length(cumflux), y = cumflux, df = 10)
+  deriv_vals <- predict(spline_fit, deriv = 1)$y
+  
+  smoothed_gpp <- tibble(
+    date = padded_data$date_object,
+    flux = padded_data[[flux_var]],
+    cumflux = cumflux,
+    smoothed_flux = deriv_vals
+  )
+  
+  # Slice out window centered on year with ±30 day buffer
+  year_start <- as.Date(paste0(year, "-01-01")) - 30
+  year_end <- as.Date(paste0(year, "-12-31")) + 30
+  smoothed_gpp <- smoothed_gpp %>% filter(date >= year_start & date <= year_end)
+  
+  max_flux <- max(smoothed_gpp$smoothed_flux, na.rm = TRUE)
+  threshold_20 <- 0.2 * max_flux
+  
+  sos <- smoothed_gpp %>% filter(smoothed_flux >= threshold_20) %>% slice_head(n = 1)
+  pos <- smoothed_gpp %>% filter(smoothed_flux == max_flux)
+  eos <- smoothed_gpp %>% filter(date > pos$date[1] & smoothed_flux <= threshold_20) %>% slice_head(n = 1)
+  
+  ggplot(smoothed_gpp, aes(x = date)) +
+    geom_line(aes(y = flux), color = "gray70", size = 0.7, alpha = 0.8) +
+    geom_line(aes(y = smoothed_flux), color = "steelblue", size = 1) +
+    geom_vline(xintercept = sos$date, color = "green", linetype = "dashed", linewidth = 1) +
+    geom_vline(xintercept = pos$date, color = "red", linetype = "dashed", linewidth = 1) +
+    geom_vline(xintercept = eos$date, color = "orange", linetype = "dashed", linewidth = 1) +
+    labs(
+      title = paste("Phenology Detection -", site_id, year),
+      y = paste("Flux (", flux_var, ")"),
+      x = "Date"
+    ) +
+    theme_classic(base_size = 14)
 }
 
 
@@ -943,23 +1194,7 @@ plot_phenology_timeseries <- function(phenology_df, issues_df, site_metadata, me
 }
 
 
-# Wrapper to visualize smoothing process for valid site-years
-illustrate_integral_smoothing_example <- function(daily_data, flux_var = "GPP_NT_VUT_REF") {
-  valid_site_years <- daily_data %>%
-    filter(!is.na(.data[[flux_var]])) %>%
-    mutate(year = lubridate::year(date_object)) %>%
-    group_by(site, year) %>%
-    summarise(days_with_data = n(), .groups = "drop") %>%
-    filter(days_with_data >= 300)
-  
-  if (nrow(valid_site_years) == 0) {
-    warning("No valid site-years with sufficient data found.")
-    return(NULL)
-  }
-  
-  example <- valid_site_years %>% sample_n(1)
-  illustrate_integral_smoothing(daily_data, site_id = example$site, year = example$year, flux_var = flux_var)
-}
+
 
 # This is in development - I 'm trying to replicate an analysis from Bowling et al 2024 
 # https://agupubs.onlinelibrary.wiley.com/doi/pdf/10.1029/2023JG007839
