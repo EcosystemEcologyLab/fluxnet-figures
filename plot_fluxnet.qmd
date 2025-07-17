@@ -3,7 +3,8 @@ title: "Initial FLUXNET Plots"
 author: 
   - Kristina Riemer
   - Dave Moore
-  # - Eric R. Scott
+  - name: Eric R. Scott
+    orcid: 0000-0002-7430-7879
 date: today
 format:
   html:
