@@ -211,7 +211,7 @@ Null values in FLUXNET are indicated by some variation of -9999 (-9999.x, where 
 multiple_sites_annual <- multiple_sites_annual |>
   mutate(across(where(is.numeric), function(x) if_else(x < -9000, NA, x)))
 
-mutiple_sites_daily <- multiple_sites_daily |>
+multiple_sites_daily <- multiple_sites_daily |>
   mutate(across(where(is.numeric), function(x) if_else(x < -9000, NA, x)))
 ```
 
