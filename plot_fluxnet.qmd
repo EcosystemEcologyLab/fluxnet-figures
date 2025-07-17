@@ -536,18 +536,21 @@ Show annual precipitation, summed from daily data, against three main variables 
 #| code-fold: true
 #| warning: false
 
-ggplot(multiple_sites_annual, aes(x = P_F, y = GPP_NT_VUT_REF, color = site)) +
-  geom_point() +
+ggplot(multiple_sites_annual, aes(x = P_F, y = GPP_NT_VUT_REF)) +
+  geom_smooth(se = FALSE, color = "black") +
+  geom_point(aes(color = site)) +
   labs(x = "Precipitation (mm y-1)", y = "Annual GPP") +
   theme_minimal()
 
-ggplot(multiple_sites_annual, aes(x = P_F, y = RECO_NT_VUT_REF, color = site)) +
-  geom_point() +
+ggplot(multiple_sites_annual, aes(x = P_F, y = RECO_NT_VUT_REF)) +
+  geom_smooth(se = FALSE, color = "black") +
+  geom_point(aes(color = site)) +
   labs(x = "Precipitation (mm y-1)", y = "Annual RECO") +
   theme_minimal()
 
-ggplot(multiple_sites_annual, aes(x = P_F, y = NEE_VUT_REF, color = site)) +
-  geom_point() +
+ggplot(multiple_sites_annual, aes(x = P_F, y = NEE_VUT_REF)) +
+  geom_smooth(se = FALSE, color = "black") +
+  geom_point(aes(color = site)) +
   labs(x = "Precipitation (mm y-1)", y = "Annual NEE") +
   theme_minimal()
 ```
@@ -558,21 +561,21 @@ Show annual temperature, averaged from daily data, against three main variables 
 #| code-fold: true
 #| warning: false
 
-ggplot(multiple_sites_annual, aes(x = TA_F, y = GPP_NT_VUT_REF, color = site)) +
-  geom_point() +
+ggplot(multiple_sites_annual, aes(x = TA_F, y = GPP_NT_VUT_REF)) +
+  geom_smooth(se = FALSE, color = "black") +
+  geom_point(aes(color = site)) +
   labs(x = "Temperature (C)", y = "Annual GPP") +
   theme_minimal()
 
-ggplot(
-  multiple_sites_annual,
-  aes(x = TA_F, y = RECO_NT_VUT_REF, color = site)
-) +
-  geom_point() +
+ggplot(multiple_sites_annual, aes(x = TA_F, y = RECO_NT_VUT_REF)) +
+  geom_smooth(se = FALSE, color = "black") +
+  geom_point(aes(color = site)) +
   labs(x = "Temperature (C)", y = "Annual RECO") +
   theme_minimal()
 
-ggplot(multiple_sites_annual, aes(x = TA_F, y = NEE_VUT_REF, color = site)) +
-  geom_point() +
+ggplot(multiple_sites_annual, aes(x = TA_F, y = NEE_VUT_REF)) +
+  geom_smooth(se = FALSE, color = "black") +
+  geom_point(aes(color = site)) +
   labs(x = "Temperature (C)", y = "Annual NEE") +
   theme_minimal()
 ```
