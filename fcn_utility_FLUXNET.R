@@ -16,6 +16,8 @@ library(ggnewscale)
 library(forcats)
 library(minpack.lm) # for phenology code
 library(patchwork)
+library(fs) # for file paths
+library(countrycode)
 
 # ------------------------
 # Utility Functions
@@ -26,7 +28,7 @@ extract_site <- function(path) {
 }
 
 load_and_cache <- function(patterns, cache_file, extract_site_func) {
-  paths <- list.files(".", pattern = paste(patterns, collapse = "|"), recursive = TRUE, full.names = TRUE)
+  paths <- dir_ls(".", regexp = paste(patterns, collapse = "|"), recurse = TRUE)
   paths <- paths[!grepl("VARINFO", basename(paths))]
   
   if (file.exists(cache_file)) {
@@ -73,7 +75,7 @@ load_fluxnet_metadata <- function() {
            CLIMATE_KOEPPEN, MAT, MAP) %>%
     mutate(DATA_SOURCE = "AmeriFlux")
   
-  icos_files <- list.files("data", pattern = "ICOSETC_.*_SITEINFO_L2\\.csv$", recursive = TRUE, full.names = TRUE)
+  icos_files <- fs::dir_ls(path = "data", regexp = "ICOSETC_.*_SITEINFO_L2\\.csv$", recurse = TRUE)
   
   icos_meta <- map_dfr(icos_files, function(path) {
     read_csv(path, col_types = cols(SITE_ID = col_character(), GROUP_ID = col_character(),
@@ -81,14 +83,18 @@ load_fluxnet_metadata <- function() {
       select(SITE_ID, VARIABLE, DATAVALUE) %>%
       group_by(SITE_ID, VARIABLE) %>%
       summarize(DATAVALUE = first(DATAVALUE), .groups = "drop") %>%
-      pivot_wider(names_from = VARIABLE, values_from = DATAVALUE)
+      pivot_wider(names_from = VARIABLE, values_from = DATAVALUE) %>%
+      mutate(country_code = str_extract(SITE_ID, "[A-Z]{2}")) |> 
+      # Translate 2 letter country codes to english names, falling back on country code if it doesn't work
+      mutate(COUNTRY = coalesce(countrycode(country_code, origin = "iso2c", destination = "country.name.en"), country_code)) |> 
+      select(-country_code)
   })
   
   icos_meta_clean <- icos_meta %>%
     transmute(
       SITE_ID,
       SITE_NAME,
-      COUNTRY = NA_character_,
+      # COUNTRY = NA_character_, 
       STATE = NA_character_,
       IGBP,
       LOCATION_LAT = as.numeric(LOCATION_LAT),
@@ -112,7 +118,7 @@ load_and_clean_daily_data <- function(site_metadata) {
   patterns <- c("FLUXNET_FULLSET_DD.*\\.csv$", "ICOSETC_[^/]+_FLUXNET_DD_L2\\.csv$")
   daily_data <- load_and_cache(patterns, config$daily_cache, extract_site)
   daily_data <- clean_fluxnet_data(daily_data, site_metadata)
-  daily_data <- daily_data %>% mutate(date_object = ymd(TIMESTAMP))
+  daily_data <- daily_data %>% mutate(date_object = ymd(TIMESTAMP), .before = TIMESTAMP)
   return(daily_data)
 }
 
@@ -120,7 +126,7 @@ load_and_clean_annual_data <- function(site_metadata) {
   patterns <- c("FLUXNET_FULLSET_YY.*\\.csv$", "ICOSETC_[^/]+_FLUXNET_YY_L2\\.csv$")
   annual_data <- load_and_cache(patterns, config$annual_cache, extract_site)
   annual_data <- clean_fluxnet_data(annual_data, site_metadata)
-  annual_data <- annual_data %>% mutate(year = TIMESTAMP)
+  annual_data <- annual_data %>% mutate(year = TIMESTAMP, .before = TIMESTAMP)
   return(annual_data)
 }
 
