@@ -119,6 +119,7 @@ downloaded_sites <- dir_ls("data", glob = "*.zip") %>%
 
 sites <- az_sites$SITE_ID[!az_sites$SITE_ID %in% downloaded_sites]
 
+# This will error because some sites don't have data
 zip_paths <- amf_download_fluxnet(
   user_id = "Aariq",
   user_email = "scottericr@gmail.com",
@@ -150,13 +151,25 @@ Single site details
 ```{r}
 single_site_daily <- read_csv(
   "data/AMF_US-SRM_FLUXNET_FULLSET_2004-2023_3-6/AMF_US-SRM_FLUXNET_FULLSET_DD_2004-2023_3-6.csv"
-)
+) |>
+  mutate(
+    across(where(is.numeric), \(x) if_else(x < -9000, NA, x)),
+    date = ymd(TIMESTAMP),
+    .before = TIMESTAMP
+  )
 single_site_hourly <- read_csv(
   "data/AMF_US-SRM_FLUXNET_FULLSET_2004-2023_3-6/AMF_US-SRM_FLUXNET_FULLSET_HH_2004-2023_3-6.csv"
-)
+) |>
+  mutate(
+    across(where(is.numeric), \(x) if_else(x < -9000, NA, x)),
+    datetime_start = ymd_hm(TIMESTAMP_START),
+    datetime_end = ymd_hm(TIMESTAMP_END),
+    .before = TIMESTAMP_START
+  )
 single_site_annually <- read_csv(
   "data/AMF_US-SRM_FLUXNET_FULLSET_2004-2023_3-6/AMF_US-SRM_FLUXNET_FULLSET_YY_2004-2023_3-6.csv"
-)
+) |>
+  mutate(across(where(is.numeric), \(x) if_else(x < -9000, NA, x)))
 ```
 
 Multiple sites
@@ -197,8 +210,7 @@ multiple_sites_annual <- map(
   }
 ) %>%
   list_rbind() |>
-  mutate(file = str_split_i(file, "_", 2)) %>%
-  rename(site = file)
+  mutate(site = str_split_i(file, "_", 2), .keep = "unused", .before = 1)
 ```
 
 ### Change null values to NA {.unnumbered .unlisted}
@@ -216,6 +228,16 @@ multiple_sites_daily <- multiple_sites_daily |>
 ```
 
 The `{r} length(unique(multiple_sites_daily$site)) ` sites currently in the report are: `{r} unique(multiple_sites_daily$site)`
+
+### Other wrangling
+
+```{r}
+# multiple_sites_annual <- multiple_sites_annual |>
+#   mutate(date = ymd(TIMESTAMP), .before = TIMESTAMP)
+
+multiple_sites_daily <- multiple_sites_daily |>
+  mutate(date = ymd(TIMESTAMP), .before = TIMESTAMP)
+```
 
 ## Figures
 
@@ -243,7 +265,6 @@ window_size <- 51
 
 total_ts_gpp <- single_site_daily %>%
   mutate(
-    date_object = ymd(TIMESTAMP),
     running_mean_gpp = stats::filter(
       GPP_NT_VUT_REF,
       rep(1 / window_size, window_size)
@@ -251,11 +272,11 @@ total_ts_gpp <- single_site_daily %>%
   )
 
 yr_start_dates <- total_ts_gpp %>%
-  select(date_object) %>%
-  filter(grepl("-01-01", date_object)) %>%
+  select(date) %>%
+  filter(grepl("-01-01", date)) %>%
   pull()
 
-ggplot(total_ts_gpp, aes(x = date_object, y = GPP_NT_VUT_REF)) +
+ggplot(total_ts_gpp, aes(x = date, y = GPP_NT_VUT_REF)) +
   geom_point(size = 0.5, color = "darkgrey") +
   geom_line(aes(y = running_mean_gpp), color = "blue", lwd = 1) +
   geom_vline(xintercept = yr_start_dates, color = "grey", alpha = 0.5) +
@@ -263,14 +284,13 @@ ggplot(total_ts_gpp, aes(x = date_object, y = GPP_NT_VUT_REF)) +
 
 total_ts_reco <- single_site_daily %>%
   mutate(
-    date_object = ymd(TIMESTAMP),
     running_mean_reco = stats::filter(
       RECO_NT_VUT_REF,
       rep(1 / window_size, window_size)
     )
   )
 
-ggplot(total_ts_reco, aes(x = date_object, y = RECO_NT_VUT_REF)) +
+ggplot(total_ts_reco, aes(x = date, y = RECO_NT_VUT_REF)) +
   geom_point(size = 0.5, color = "darkgrey") +
   geom_line(aes(y = running_mean_reco), color = "blue", lwd = 1) +
   geom_vline(xintercept = yr_start_dates, color = "grey", alpha = 0.5) +
@@ -278,14 +298,13 @@ ggplot(total_ts_reco, aes(x = date_object, y = RECO_NT_VUT_REF)) +
 
 total_ts_nee <- single_site_daily %>%
   mutate(
-    date_object = ymd(TIMESTAMP),
     running_mean_nee = stats::filter(
       NEE_VUT_REF,
       rep(1 / window_size, window_size)
     )
   )
 
-ggplot(total_ts_nee, aes(x = date_object, y = NEE_VUT_REF)) +
+ggplot(total_ts_nee, aes(x = date, y = NEE_VUT_REF)) +
   geom_point(size = 0.5, color = "darkgrey") +
   geom_line(aes(y = running_mean_nee), color = "blue", lwd = 1) +
   geom_vline(xintercept = yr_start_dates, color = "grey", alpha = 0.5) +
@@ -299,7 +318,6 @@ Same smoother as used for single site.
 ```{r}
 #| warning: false
 total_ts_ms <- multiple_sites_daily %>%
-  mutate(date_object = ymd(TIMESTAMP)) %>%
   left_join(site_metadata, by = c("site" = "SITE_ID")) %>%
   group_by(site) %>%
   mutate(
@@ -318,9 +336,8 @@ total_ts_ms <- multiple_sites_daily %>%
   )
 
 yr_start_dates_ms <- total_ts_ms %>%
-  select(date_object) %>%
-  filter(grepl("-01-01", date_object)) %>%
-  pull()
+  filter(grepl("-01-01", date)) %>%
+  pull(date)
 ```
 
 Show entire time series of GPP for all sites, with points for daily values.
@@ -331,7 +348,7 @@ Show entire time series of GPP for all sites, with points for daily values.
 
 ggplot(
   total_ts_ms,
-  aes(x = date_object, y = GPP_NT_VUT_REF, color = site, fill = site)
+  aes(x = date, y = GPP_NT_VUT_REF, color = site, fill = site)
 ) +
   geom_point(size = 0.1, alpha = 0.1, key_glyph = draw_key_rect) +
   geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
@@ -343,7 +360,7 @@ ggplot(
 
 ggplot(
   total_ts_ms,
-  aes(x = date_object, y = RECO_NT_VUT_REF, color = site, fill = site)
+  aes(x = date, y = RECO_NT_VUT_REF, color = site, fill = site)
 ) +
   geom_point(size = 0.1, alpha = 0.1, key_glyph = draw_key_rect) +
   geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
@@ -355,7 +372,7 @@ ggplot(
 
 ggplot(
   total_ts_ms,
-  aes(x = date_object, y = NEE_VUT_REF, color = site, fill = site)
+  aes(x = date, y = NEE_VUT_REF, color = site, fill = site)
 ) +
   geom_point(size = 0.1, alpha = 0.1, key_glyph = draw_key_rect) +
   geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
@@ -371,7 +388,7 @@ Show entire time series of GPP for all sites, with daily values smoothed out as 
 #| code-fold: true
 #| warning: false
 
-ggplot(total_ts_ms, aes(x = date_object, y = running_mean_gpp, color = site)) +
+ggplot(total_ts_ms, aes(x = date, y = running_mean_gpp, color = site)) +
   geom_line(lwd = 0.5, alpha = 0.7) +
   geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
   geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
@@ -379,7 +396,7 @@ ggplot(total_ts_ms, aes(x = date_object, y = running_mean_gpp, color = site)) +
   labs(x = "Date", y = "GPP (smoothed)") +
   theme(panel.background = element_rect(color = "black"))
 
-ggplot(total_ts_ms, aes(x = date_object, y = running_mean_reco, color = site)) +
+ggplot(total_ts_ms, aes(x = date, y = running_mean_reco, color = site)) +
   geom_line(lwd = 0.5, alpha = 0.7) +
   geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
   geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
@@ -387,7 +404,7 @@ ggplot(total_ts_ms, aes(x = date_object, y = running_mean_reco, color = site)) +
   labs(x = "Date", y = "RECO (smoothed)") +
   theme(panel.background = element_rect(color = "black"))
 
-ggplot(total_ts_ms, aes(x = date_object, y = running_mean_nee, color = site)) +
+ggplot(total_ts_ms, aes(x = date, y = running_mean_nee, color = site)) +
   geom_line(lwd = 0.5, alpha = 0.7) +
   geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
   geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
@@ -402,11 +419,10 @@ Show average daily values (with standard deviations)
 
 ```{r}
 #| code-fold: true
+
+# get averages by date across years
 gpp_by_date <- single_site_daily %>%
-  mutate(
-    date_object = ymd(TIMESTAMP),
-    date_minus_year = format(date_object, '%m-%d')
-  ) %>%
+  mutate(date_minus_year = format(date, '%m-%d')) %>%
   group_by(date_minus_year) %>%
   summarize(gpp_mean = mean(GPP_NT_VUT_REF), gpp_sd = sd(GPP_NT_VUT_REF)) %>%
   mutate(date_fake_year = ymd(paste0("2024-", date_minus_year)))
@@ -422,10 +438,7 @@ ggplot(gpp_by_date, aes(x = date_fake_year, y = gpp_mean)) +
   scale_x_date(date_labels = "%B")
 
 reco_by_date <- single_site_daily %>%
-  mutate(
-    date_object = ymd(TIMESTAMP),
-    date_minus_year = format(date_object, '%m-%d')
-  ) %>%
+  mutate(date_minus_year = format(date, '%m-%d')) %>%
   group_by(date_minus_year) %>%
   summarize(
     reco_mean = mean(RECO_NT_VUT_REF),
@@ -444,10 +457,7 @@ ggplot(reco_by_date, aes(x = date_fake_year, y = reco_mean)) +
   scale_x_date(date_labels = "%B")
 
 nee_by_date <- single_site_daily %>%
-  mutate(
-    date_object = ymd(TIMESTAMP),
-    date_minus_year = format(date_object, '%m-%d')
-  ) %>%
+  mutate(date_minus_year = format(date, '%m-%d')) %>%
   group_by(date_minus_year) %>%
   summarize(nee_mean = mean(NEE_VUT_REF), nee_sd = sd(NEE_VUT_REF)) %>%
   mutate(date_fake_year = ymd(paste0("2024-", date_minus_year)))
@@ -477,10 +487,7 @@ Show average daily values by site (symbols) and vegetation type (colors)
 #| warning: false
 
 gpp_by_date_sites <- multiple_sites_daily %>%
-  mutate(
-    date_object = ymd(TIMESTAMP),
-    date_minus_year = format(date_object, '%m-%d')
-  ) %>%
+  mutate(date_minus_year = format(date, '%m-%d')) %>%
   group_by(site, date_minus_year) %>%
   summarize(
     gpp_mean = mean(GPP_NT_VUT_REF),
@@ -686,6 +693,17 @@ ggplot(
 2. There is no trend line because there doesn't really seem to be a trend here. One might emerge once we add more sites? 
 :::
 
+ERIC: I thought it was just like this
+
+```{r}
+ggplot(multiple_sites_annual, aes(x = TA_F, y = NEE_VUT_REF)) +
+  geom_smooth(se = FALSE, color = "black") +
+  geom_smooth(se = FALSE, aes(color = site), method = "lm") +
+  # geom_point(aes(color = site)) +
+  labs(x = "Temperature (C)", y = "Annual NEE") +
+  theme_minimal()
+```
+
 ### Bowen ratios
 
 Textbook figure: 
@@ -720,12 +738,7 @@ Show average daily summer-only sensible vs latent heat flux (i.e., Bowen ratio) 
 #| code-fold: true
 
 multiple_sites_flux <- multiple_sites_daily %>%
-  mutate(
-    date_object = ymd(TIMESTAMP),
-    .before = 1,
-    month = format(date_object, '%m')
-  ) %>%
-  filter(month %in% c("06", "07", "08")) %>%
+  filter(month(date) %in% c(6:8)) %>% #filter to include summer only
   group_by(site) %>%
   summarize(
     latent_heat_flux = mean(LE_F_MDS),
@@ -847,9 +860,8 @@ Parsing dates and times:
 ```{r}
 rad_dt <- single_site_hourly %>%
   mutate(
-    date_object = ymd_hm(TIMESTAMP_START),
-    date = date(date_object),
-    time = format(as.POSIXct(date_object), format = '%H:%M')
+    date = date(datetime_start),
+    time = format(as.POSIXct(datetime_start), format = '%H:%M')
   )
 ```
 
