@@ -1,6 +1,6 @@
 # fluxnet_workflow_refactor.R
 # Refactored FLUXNET workflow for daily and annual analysis
-# Authors: Kristina Riemer & Dave Moore (refactored by ChatGPT)
+# Authors: Kristina Riemer, Eric Scott & Dave Moore (refactored by ChatGPT)
 
 # Load libraries
 library(dplyr)
