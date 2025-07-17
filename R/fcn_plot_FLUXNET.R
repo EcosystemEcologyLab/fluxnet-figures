@@ -1,100 +1,146 @@
 # fcn_plot_FLUXNET.R
 # Centralized plotting functions for FLUXNET workflow
+# -----------------------------------------------
+# fcn_plot_FLUXNET.R
+# Master Plotting Functions for FLUXNET Workflow
+# -----------------------------------------------
+# This script contains modular plotting functions designed to visualize 
+# flux tower data at multiple temporal and spatial scales. It supports 
+# annual and daily summaries, time series, latitudinal trends, and 
+# categorical comparisons by IGBP.
+
+# ------------------------
+# Function Overview
+# ------------------------
+
+# 1. plot_flux_by_igbp()
+#    - Boxplot of fluxes aggregated by IGBP class (across all years)
+#    - Also returns bar plots of medians and site-year counts
+#    - Returns: list(flux_plot, median_plot, count_plot, composite_plot)
+
+# 2. plot_flux_by_igbp_timeslice_grouped()
+#    - Boxplot of fluxes grouped by IGBP and binned into 5-year slices
+#    - Useful for tracking trends within vegetation types
+#    - Returns: list(flux_plot, median_plot, count_plot)
+
+# 3. plot_flux_box_by_group()
+#    - Boxplots of annual fluxes grouped by biome categories:
+#      (Forest, Shrub/Opens, Grass/Crops/Wet, Other)
+#    - Includes optional y-axis squishing to reduce influence of outliers
+#    - Returns: list(Forest, ShrubOpens, GrassCropsWet, Other)
+
+# 4. plot_flux_timeseries_by_igbp()
+#    - Time series of median annual fluxes with 95% CI, faceted by IGBP
+#    - Allows interannual trend tracking across vegetation types
+#    - Returns: a ggplot object
+
+# 5. plot_latitudinal_flux()
+#    - Ribbon plot of flux min/max range by latitude band
+#    - Includes site-level mean flux points
+#    - Inputs: annual_data + site_metadata (must include SITE_ID, LAT, IGBP)
+#    - Returns: a ggplot object
+
+# 6. plot_seasonal_cycle()
+#    - Seasonal cycle of daily mean flux by biome group with 95% CI ribbon
+#    - Customizable y-axis handling (full/squish)
+#    - Returns: list(Forest, ShrubOpens, GrassCropsWet, Other)
+
+# 7. plot_annual_fluxnet_data()
+#    - Simple scatterplots:
+#        (a) Precipitation vs NEE
+#        (b) Temperature vs GPP
+#    - Useful for quick climate-flux exploratory plots
+#    - Returns: list(precip_vs_nee, temp_vs_gpp)
+
+# 8. PlotXY_annual()
+#    - General XY scatterplot with IGBP as shape aesthetic
+#    - Fully flexible input of any x/y variables
+#    - Returns: a ggplot object
+
+# ------------------------
+# Notes:
+# - All functions use tidyverse (dplyr, ggplot2) grammar.
+# - `flux_var` argument (e.g., "NEE_VUT_REF", "GPP_NT_VUT_REF") controls which flux is visualized.
+# - y-axis units are formatted automatically using expression() based on variable name.
+# - Most functions accept optional settings for controlling y-axis limits, time windows, or grouping behavior.
+# - All plots return either a single ggplot object or a list of them that can be composed using patchwork or gridExtra.
+
+# ------------------------
+# Usage Example:
+#   plots <- plot_flux_by_igbp(annual_data, "NEE_VUT_REF")
+#   plots$composite_plot
+#
+#   ts_plot <- plot_flux_timeseries_by_igbp(annual_data, "GPP_NT_VUT_REF")
+#   print(ts_plot)
+# ------------------------
 
 # -----------------------------
 # Boxplot: IGBP Aggregated Flux Summary
 # -----------------------------
 plot_flux_by_igbp <- function(annual_data, flux_var = "NEE_VUT_REF") {
-    igbp_order <- c("DBF", "ENF", "MF", "DNF", "EBF", "OSH", "CSH", "WSA", "SAV", "GRA", "CRO", "WET", "BSV")
-    
-    annual_data <- annual_data %>%
-      mutate(
-        FLUX = .data[[flux_var]],
-        flux_sign = factor(
-          ifelse(FLUX < 0, "Negative", "Positive"),
-          levels = c("Negative", "Positive")
-        ),
-        IGBP = factor(IGBP, levels = igbp_order)
-      )
-    
-    y_label <- case_when(
-      flux_var == "NEE_VUT_REF"     ~ "NEE (μmol m⁻² s⁻¹)",
-      flux_var == "GPP_NT_VUT_REF"  ~ "GPP (μmol m⁻² s⁻¹)",
-      flux_var == "RECO_NT_VUT_REF" ~ "Reco (μmol m⁻² s⁻¹)",
-      flux_var == "LE_F_MDS"        ~ "LE (W m⁻²)",
-      flux_var == "WUE"             ~ "WUE (GPP / LE)",
-      TRUE                          ~ flux_var
+  igbp_order <- c("DBF", "ENF", "MF", "DNF", "EBF", "OSH", "CSH", "WSA", "SAV", "GRA", "CRO", "WET", "BSV")
+  
+  annual_data <- annual_data %>%
+    mutate(
+      FLUX = .data[[flux_var]],
+      flux_sign = factor(ifelse(FLUX < 0, "Negative", "Positive"), levels = c("Negative", "Positive")),
+      IGBP = factor(IGBP, levels = igbp_order)
     )
-    
-    # Boxplot with jitter
-    p_flux <- ggplot(annual_data, aes(x = IGBP, y = FLUX)) +
-      geom_boxplot(color = "black", fill = NA, outlier.shape = NA) +
-      geom_jitter(aes(color = flux_sign), width = 0.25, alpha = 0.4, size = 1) +
-      scale_color_manual(
-        values = c("Negative" = "#1b9e77", "Positive" = "#d95f02"),
-        name = paste0(y_label, " Sign")
-      ) +
-      labs(
-        x = NULL,
-        y = y_label,
-        title = paste(y_label, "Distribution by IGBP (All Years)")
-      ) +
-      theme_classic(base_size = 14) +
-      theme(
-        panel.background = element_rect(color = "black"),
-        axis.text.x = element_blank(),
-        axis.ticks.x = element_blank(),
-        legend.position = "bottom"
-      )
-    
-    # Median bar plot
-    summary_data <- annual_data %>%
-      group_by(IGBP) %>%
-      summarize(median_flux = median(FLUX, na.rm = TRUE), .groups = "drop") %>%
-      mutate(IGBP = factor(IGBP, levels = igbp_order))
-    
-    p_median <- ggplot(summary_data, aes(x = IGBP, y = median_flux)) +
-      geom_col(fill = "black", alpha = 0.6) +
-      labs(
-        x = NULL,
-        y = "Med"
-      ) +
-      theme_classic(base_size = 14) +
-      theme(
-        panel.background = element_rect(color = "black"),
-        axis.text.x = element_blank(),
-        axis.ticks.x = element_blank()
-      )
-    
-    # Site-year count plot
-    site_counts <- annual_data %>%
-      group_by(IGBP) %>%
-      summarize(n_siteyears = n(), .groups = "drop") %>%
-      mutate(IGBP = factor(IGBP, levels = igbp_order))
-    
-    p_count <- ggplot(site_counts, aes(x = IGBP, y = n_siteyears)) +
-      geom_col(fill = "gray40", alpha = 0.7) +
-      labs(
-        x = "IGBP Class",
-        y = "#SiteYrs"
-      ) +
-      theme_classic(base_size = 14) +
-      theme(
-        panel.background = element_rect(color = "black"),
-        axis.text.x = element_text(angle = 45, hjust = 1)
-      )
-    
-    # Composite layout using patchwork
-    p_composite <- p_flux / p_median / p_count +
-      plot_layout(heights = c(0.7, 0.2, 0.1))
-    
-    list(
-      flux_plot = p_flux,
-      median_plot = p_median,
-      count_plot = p_count,
-      composite_plot = p_composite
-    )
+  
+  y_label <- if (str_starts(flux_var, "NEE")) {
+    expression(NEE~(mu*mol~m^{-2}~s^{-1}))
+  } else if (str_starts(flux_var, "GPP")) {
+    expression(GPP~(mu*mol~m^{-2}~s^{-1}))
+  } else if (str_starts(flux_var, "RECO")) {
+    expression(Reco~(mu*mol~m^{-2}~s^{-1}))
+  } else if (str_starts(flux_var, "LE")) {
+    expression(LE~(W~m^{-2}))
+  } else if (str_starts(flux_var, "WUE")) {
+    expression(WUE~(GPP/LE))
+  } else {
+    flux_var
+  }
+  
+  p_flux <- ggplot(annual_data, aes(x = IGBP, y = FLUX)) +
+    geom_boxplot(color = "black", fill = NA, outlier.shape = NA) +
+    geom_jitter(aes(color = flux_sign), width = 0.25, alpha = 0.4, size = 1) +
+    scale_color_manual(values = c("Negative" = "#1b9e77", "Positive" = "#d95f02"), name = "Flux Sign") +
+    labs(x = NULL, y = y_label, title = "Flux Distribution by IGBP (All Years)") +
+    theme_classic(base_size = 14) +
+    theme(panel.background = element_rect(color = "black"), axis.text.x = element_blank(), axis.ticks.x = element_blank(), legend.position = "bottom")
+  
+  summary_data <- annual_data %>%
+    group_by(IGBP) %>%
+    summarize(median_flux = median(FLUX, na.rm = TRUE), .groups = "drop") %>%
+    mutate(IGBP = factor(IGBP, levels = igbp_order))
+  
+  p_median <- ggplot(summary_data, aes(x = IGBP, y = median_flux)) +
+    geom_col(fill = "black", alpha = 0.6) +
+    labs(x = NULL, y = "Median") +
+    theme_classic(base_size = 14) +
+    theme(panel.background = element_rect(color = "black"), axis.text.x = element_blank(), axis.ticks.x = element_blank())
+  
+  site_counts <- annual_data %>%
+    group_by(IGBP) %>%
+    summarize(n_siteyears = n(), .groups = "drop") %>%
+    mutate(IGBP = factor(IGBP, levels = igbp_order))
+  
+  p_count <- ggplot(site_counts, aes(x = IGBP, y = n_siteyears)) +
+    geom_col(fill = "gray40", alpha = 0.7) +
+    labs(x = "IGBP Class", y = "# Site Years") +
+    theme_classic(base_size = 14) +
+    theme(panel.background = element_rect(color = "black"), axis.text.x = element_text(angle = 45, hjust = 1))
+  
+  p_composite <- p_flux / p_median / p_count + patchwork::plot_layout(heights = c(0.7, 0.2, 0.1))
+  
+  list(
+    flux_plot = p_flux,
+    median_plot = p_median,
+    count_plot = p_count,
+    composite_plot = p_composite
+  )
 }
+
 
 # -----------------------------
 # Boxplot: IGBP Aggregated Flux by Time Slice (Grouped by IGBP)
@@ -114,19 +160,23 @@ plot_flux_by_igbp_timeslice_grouped <- function(annual_data, flux_var = "NEE_VUT
     ) %>%
     filter(!is.na(TimeSlice), !is.na(IGBP))
   
-  y_label <- case_when(
-    flux_var == "NEE_VUT_REF"     ~ "NEE (μmol m⁻² s⁻¹)",
-    flux_var == "GPP_NT_VUT_REF"  ~ "GPP (μmol m⁻² s⁻¹)",
-    flux_var == "RECO_NT_VUT_REF" ~ "Reco (μmol m⁻² s⁻¹)",
-    flux_var == "LE_F_MDS"        ~ "LE (W m⁻²)",
-    flux_var == "WUE"             ~ "WUE (GPP / LE)",
-    TRUE                          ~ flux_var
-  )
+  y_label <- if (str_starts(flux_var, "NEE")) {
+    expression(NEE~(mu*mol~m^{-2}~s^{-1}))
+  } else if (str_starts(flux_var, "GPP")) {
+    expression(GPP~(mu*mol~m^{-2}~s^{-1}))
+  } else if (str_starts(flux_var, "RECO")) {
+    expression(Reco~(mu*mol~m^{-2}~s^{-1}))
+  } else if (str_starts(flux_var, "LE")) {
+    expression(LE~(W~m^{-2}))
+  } else if (str_starts(flux_var, "WUE")) {
+    expression(WUE~(GPP/LE))
+  } else {
+    flux_var
+  }
   
   p_flux <- ggplot(annual_data, aes(x = IGBP, y = FLUX, fill = TimeSlice)) +
     geom_boxplot(outlier.shape = NA, position = position_dodge(width = 0.75)) +
     labs(
-      title = paste(y_label, "by IGBP and Time Slice"),
       x = "IGBP Class",
       y = y_label,
       fill = "Time Slice"
@@ -220,14 +270,19 @@ plot_flux_box_by_group <- function(annual_data, flux_var = "NEE_VUT_REF", y_mode
     summarize(n_sites = n_distinct(site), .groups = "drop")
   
   # Label formatting
-  y_label <- case_when(
-    flux_var == "NEE_VUT_REF" ~ "NEE (μmol m⁻² s⁻¹)",
-    flux_var == "GPP_NT_VUT_REF" ~ "GPP (μmol m⁻² s⁻¹)",
-    flux_var == "RECO_NT_VUT_REF" ~ "Reco (μmol m⁻² s⁻¹)",
-    flux_var == "LE_F_MDS" ~ "LE (W m⁻²)",
-    flux_var == "WUE" ~ "Water Use Efficiency (GPP / LE)",
-    TRUE ~ flux_var
-  )
+  y_label <- if (str_starts(flux_var, "NEE")) {
+    expression(NEE~(mu*mol~m^{-2}~s^{-1}))
+  } else if (str_starts(flux_var, "GPP")) {
+    expression(GPP~(mu*mol~m^{-2}~s^{-1}))
+  } else if (str_starts(flux_var, "RECO")) {
+    expression(Reco~(mu*mol~m^{-2}~s^{-1}))
+  } else if (str_starts(flux_var, "LE")) {
+    expression(LE~(W~m^{-2}))
+  } else if (str_starts(flux_var, "WUE")) {
+    expression(WUE~(GPP/LE))
+  } else {
+    flux_var
+  }
   
   plot_box <- function(data, counts, label) {
     # Y-axis configuration
@@ -316,14 +371,19 @@ plot_flux_timeseries_by_igbp <- function(annual_data, flux_var = "NEE_VUT_REF") 
     )
   
   # Y-axis label
-  y_label <- case_when(
-    flux_var == "NEE_VUT_REF"     ~ "NEE (µmol m-2 s-1)",
-    flux_var == "GPP_NT_VUT_REF"  ~ "GPP (µmol m-2 s-1)",
-    flux_var == "RECO_NT_VUT_REF" ~ "Reco (µmol m-2 s-1)",
-    flux_var == "LE_F_MDS"        ~ "LE (W m-2)",
-    flux_var == "WUE"             ~ "WUE (GPP / LE)",
-    TRUE                          ~ flux_var
-  )
+  y_label <- if (str_starts(flux_var, "NEE")) {
+    expression(NEE~(mu*mol~m^{-2}~s^{-1}))
+  } else if (str_starts(flux_var, "GPP")) {
+    expression(GPP~(mu*mol~m^{-2}~s^{-1}))
+  } else if (str_starts(flux_var, "RECO")) {
+    expression(Reco~(mu*mol~m^{-2}~s^{-1}))
+  } else if (str_starts(flux_var, "LE")) {
+    expression(LE~(W~m^{-2}))
+  } else if (str_starts(flux_var, "WUE")) {
+    expression(WUE~(GPP/LE))
+  } else {
+    flux_var
+  }
   
   # Plot with ordered facets
   ggplot(ts_summary, aes(x = year, y = median_flux)) +
@@ -378,14 +438,21 @@ plot_latitudinal_flux <- function(annual_data, site_metadata, flux_var = "NEE_VU
     )
   
   # Create a y-axis label and title based on flux_var
-  y_label <- case_when(
-    flux_var == "NEE_VUT_REF" ~ "NEE (μmol m⁻² s⁻¹)",
-    flux_var == "GPP_NT_VUT_REF" ~ "GPP (μmol m⁻² s⁻¹)",
-    flux_var == "LE_F_MDS" ~ "LE (W m⁻²)",
-    TRUE ~ flux_var
-  )
+  y_label <- if (str_starts(flux_var, "NEE")) {
+    expression(NEE~(mu*mol~m^{-2}~s^{-1}))
+  } else if (str_starts(flux_var, "GPP")) {
+    expression(GPP~(mu*mol~m^{-2}~s^{-1}))
+  } else if (str_starts(flux_var, "RECO")) {
+    expression(Reco~(mu*mol~m^{-2}~s^{-1}))
+  } else if (str_starts(flux_var, "LE")) {
+    expression(LE~(W~m^{-2}))
+  } else if (str_starts(flux_var, "WUE")) {
+    expression(WUE~(GPP/LE))
+  } else {
+    flux_var
+  }
   
-  title_text <- paste0("Annual ", y_label, " range in ", bin_width, "° lat bands")
+  title_text <- paste0("Flux range in ", bin_width, "° lat bands")
   
   # Step 3: Generate the plot
   ggplot() +
