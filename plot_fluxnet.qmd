@@ -91,8 +91,8 @@ Demonstrating how to use `amf_download_fluxnet` function
 #| eval: false
 
 zip_path <- amf_download_fluxnet(
-  user_id = "kristinariemer",
-  user_email = "kristinariemer@arizona.edu",
+  user_id = "Aariq",
+  user_email = "scottericr@gmail.com",
   site_id = "US-xSR",
   data_product = "FLUXNET",
   data_variant = "FULLSET",
@@ -117,58 +117,25 @@ az_sites <- site_metadata %>%
 downloaded_sites <- dir_ls("data", glob = "*.zip") %>%
   str_split_i("_", 2)
 
-# amf_download_fluxnet is vectorized, so this could be done much more simply,
-# but maybe the for loop is beneficial for error handling?
+sites <- az_sites$SITE_ID[!az_sites$SITE_ID %in% downloaded_sites]
 
-for (site in az_sites$SITE_ID) {
-  if (!site %in% downloaded_sites) {
-    print(paste0("Downloading data for ", site))
-    tryCatch(
-      {
-        zip_path <- amf_download_fluxnet(
-          user_id = "kristinariemer",
-          user_email = "kristinariemer@arizona.edu",
-          site_id = site,
-          data_product = "FLUXNET",
-          data_variant = "FULLSET",
-          data_policy = "CCBY4.0",
-          agree_policy = TRUE,
-          intended_use = "synthesis",
-          intended_use_text = "creating pipeline for standardized figures",
-          out_dir = "data/"
-        )
-        unzipped_path <- fs::path_ext_remove(zip_path)
-        unzip(zip_path, exdir = unzipped_path)
-      },
-      error = function(e) {
-        cat("ERROR:", conditionMessage(e), "\n")
-      }
-    )
-  } else {
-    print(paste0("Data has already been downloaded for ", site))
-  }
-}
+zip_paths <- amf_download_fluxnet(
+  user_id = "Aariq",
+  user_email = "scottericr@gmail.com",
+  site_id = sites,
+  data_product = "FLUXNET",
+  data_variant = "FULLSET",
+  data_policy = "CCBY4.0",
+  agree_policy = TRUE,
+  intended_use = "synthesis",
+  intended_use_text = "creating pipeline for standardized figures",
+  out_dir = "data/"
+)
 
-## simpler version:
-# sites <- az_sites$SITE_ID[!az_sites$SITE_ID %in% downloaded_sites]
-
-# zip_paths <- amf_download_fluxnet(
-#   user_id = "kristinariemer",
-#   user_email = "kristinariemer@arizona.edu",
-#   site_id = sites,
-#   data_product = "FLUXNET",
-#   data_variant = "FULLSET",
-#   data_policy = "CCBY4.0",
-#   agree_policy = TRUE,
-#   intended_use = "synthesis",
-#   intended_use_text = "creating pipeline for standardized figures",
-#   out_dir = "data/"
-# )
-
-# map(zip_paths, function(zip_path) {
-#   unzipped_path <- fs::path_ext_remove(zip_path)
-#   unzip(zip_path, exdir = unzipped_path)
-# })
+walk(zip_paths, function(zip_path) {
+  unzipped_path <- fs::path_ext_remove(zip_path)
+  unzip(zip_path, exdir = unzipped_path)
+})
 
 ```
 
@@ -205,7 +172,8 @@ daily_sites_paths <- dir_ls(
   recurse = TRUE
 )
 
-# read_csv(daily_sites_paths) #this doesn't work because the CSVs have different columns
+# read_csv(daily_sites_paths) doesn't work because the CSVs have different
+# numbers of columns
 
 multiple_sites_daily <- map(
   daily_sites_paths,
@@ -239,36 +207,9 @@ Null values in FLUXNET are indicated by some variation of -9999 (-9999.x, where 
 
 ```{r}
 #| warning: false
-cols_to_check <- c(
-  "GPP_NT_VUT_REF",
-  "RECO_NT_VUT_REF",
-  "NEE_VUT_REF",
-  "LE_F_MDS",
-  "H_F_MDS"
-)
-
-# multiple_sites_annual_nulls <- multiple_sites_annual %>%
-#   select(site, TIMESTAMP, cols_to_check) %>%
-#   filter(if_any(any_of(cols_to_check), function(x) x < -9000))
-
-# multiple_sites_annual <- multiple_sites_annual %>%
-#   mutate(replace(
-#     across(all_of(cols_to_check)),
-#     across(cols_to_check) < -9000,
-#     NA
-#   ))
-
-# Shouldn't we just replace all numeric values < -9000 with NA?
+# Replace all numeric values < -9000 with NA
 multiple_sites_annual <- multiple_sites_annual |>
   mutate(across(where(is.numeric), function(x) if_else(x < -9000, NA, x)))
-
-
-# multiple_sites_daily_nulls <- multiple_sites_daily %>%
-#   select(site, TIMESTAMP, cols_to_check) %>%
-#   filter(if_any(cols_to_check, ~ . < -9000))
-
-# multiple_sites_daily <- multiple_sites_daily %>%
-#   mutate(replace(across(cols_to_check), across(cols_to_check) < -9000, NA))
 
 mutiple_sites_daily <- multiple_sites_daily |>
   mutate(across(where(is.numeric), function(x) if_else(x < -9000, NA, x)))
