@@ -20,6 +20,15 @@ library(fs) # for file paths
 library(countrycode)
 
 # ------------------------
+# Configuration (Global)
+# ------------------------
+
+config <- list(
+  daily_cache = "data/multiple_sites_daily.rds",
+  annual_cache = "data/multiple_sites_annual.rds"
+)
+
+# ------------------------
 # Utility Functions
 # ------------------------
 
