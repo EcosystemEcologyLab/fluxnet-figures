@@ -1,6 +1,6 @@
 # Load data
 library(dplyr)
-source("fcn_utility_FLUXNET.R")
+source("R/fcn_utility_FLUXNET.R")
 config <- list(
   daily_cache = "data/multiple_sites_daily.rds",
   annual_cache = "data/multiple_sites_annual.rds",
@@ -42,35 +42,32 @@ rand_sites <- sample(sites, 5)
 daily_ts |>  
   filter(site %in% rand_sites) |>
   gg_season()
+
+# Fit different types of timeseries decompositions
 fit <- 
   daily_ts |>
   group_by(IGBP) |> 
   filter(site %in% rand_sites) |> 
   model(
+    # classic = classical_decomposition(NEE_VUT_MEAN ~ season("year"), type = "additive"),
     stl = STL(NEE_VUT_MEAN ~ trend() + season(period = "year")),
-    ets = ETS(NEE_VUT_MEAN ~ trend(method = c("N", "A", "Ad")) + season()),
-    tslm = TSLM(NEE_VUT_MEAN ~ trend() + season()),
-    arima = ARIMA(NEE_VUT_MEAN) #super slow, specify fully after auto-fit maybe
+    ets = ETS(NEE_VUT_MEAN ~ trend(method = c("A", "Ad")) + season(method = c("A", "M")) + error(method = c("A", "M"))),
+    # arima = ARIMA(NEE_VUT_MEAN) #Performs the best as a model, but doesn't do timeseries decomposition per se
   )
 fit
 
+# Multiple seasonal decomposition by Loess (STL): https://feasts.tidyverts.org/reference/STL.html
 fit |>
   select(stl) |> 
   components() |>  
   autoplot()
 
+# Exponential smoothing state space model (ETS): https://fable.tidyverts.org/reference/ETS.html
 fit |>
   select(ets) |> 
   components() |> 
   autoplot()
 
-fit |> 
-  select(tslm) |> 
-  glance()
-
-fit |> 
-  select(arima) |> 
-  glance()
 
 fit |> 
   accuracy() |> 
