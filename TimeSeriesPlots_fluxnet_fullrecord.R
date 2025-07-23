@@ -18,7 +18,7 @@ library(patchwork)
 # ------------------------
 # Example Usage
 # ------------------------
-analysis_mode <- "anual"
+analysis_mode <- "annual"
 
 # ------------------------
 # Configuration
@@ -354,7 +354,7 @@ plot_flux_by_igbp_timeslice_grouped <- function(annual_data, flux_var = "NEE_VUT
   ))
 }
 
-p_flux_igbp_time <- plot_flux_by_igbp_timeslice(annual_data, flux_var = "GPP_NT_CUT_REF")
+p_flux_igbp_time <- plot_flux_by_igbp_timeslice_grouped(annual_data, flux_var = "GPP_NT_CUT_REF")
 save_plot_list(p_flux_igbp_time, prefix = "flux_by_IGBP_GPPTime")
 
 
