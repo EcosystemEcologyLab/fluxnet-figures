@@ -7,7 +7,7 @@ library(dplyr)
 # main_analysis.R
 
 # Load the utility functions
-source("fcn_utility_FLUXNET.R")
+source("R/fcn_utility_FLUXNET.R")
 
 # Load metadata first
 site_metadata <- load_fluxnet_metadata()
