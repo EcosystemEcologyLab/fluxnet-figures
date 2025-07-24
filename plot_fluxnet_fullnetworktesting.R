@@ -1303,7 +1303,7 @@ wc <- terra::rast(list.files("wc_data/bio", pattern = "\\.tif$", full.names = TR
 # }
 
 
-whittaker_format <- multiple_sites_annual %>% 
+whittaker_format <- annual_data %>% 
   group_by(site) %>% 
   summarize(mean_precip = mean(P_F), 
             mean_temp = mean(TA_F),
@@ -1313,11 +1313,11 @@ whittaker_format <- multiple_sites_annual %>%
   mutate(
     NEE_sign = ifelse(mean_NEE < 0, "Sink (NEE < 0)", "Source (NEE ≥ 0)")
   ) %>% 
-  left_join(Fluxnet_info, by = "site")  # Join with Fluxnet_info instead of site_metadata
+  left_join(site_metadata, by = c("site" = "SITE_ID"))
 
 
 # Extract BIO1 and BIO12 from whittaker_format coordinates
-site_pts <- terra::vect(whittaker_format, geom = c("Longitude", "Latitude"), crs = "EPSG:4326")
+site_pts <- terra::vect(whittaker_format, geom = c("LOCATION_LONG", "LOCATION_LAT"), crs = "EPSG:4326")
 
 wc_extract <- terra::extract(wc[[c(1, 12)]], site_pts)
 
