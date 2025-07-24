@@ -231,7 +231,7 @@ multiple_sites_daily <- multiple_sites_daily |>
   mutate(across(where(is.numeric), function(x) if_else(x < -9000, NA, x)))
 ```
 
-The `{r} length(unique(multiple_sites_daily$site)) ` sites currently in the report are: `{r} unique(multiple_sites_daily$site)`
+The `r .QuartoInlineRender(length(unique(multiple_sites_daily$site)))` sites currently in the report are: `r .QuartoInlineRender(unique(multiple_sites_daily$site))`
 
 ### Other wrangling
 
@@ -606,7 +606,6 @@ Textbook figure (for NPP):
 ![](textbook_figures/interannual_meteo_comp.png)
 
 ```{r}
-#TODO: use precip instead of temp
 library(geomtextpath)
 ggplot(multiple_sites_annual, aes(x = TA_F, y = NEE_VUT_REF)) +
   geom_smooth(se = FALSE, color = "black", linewidth = 0.5) +
@@ -786,7 +785,7 @@ rad_dt <- single_site_hourly %>%
   )
 ```
 
-Show average half-hourly shortwave, longwave, and total radiation for a single site. Data collection starts `{r} min(rad_dt$date)` and ends `{r} max(rad_dt$date)`. 
+Show average half-hourly shortwave, longwave, and total radiation for a single site. Data collection starts `r .QuartoInlineRender(min(rad_dt$date))` and ends `r .QuartoInlineRender(max(rad_dt$date))`. 
 
 ```{r}
 #| code-fold: true
