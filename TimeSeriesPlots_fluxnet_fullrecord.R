@@ -527,10 +527,6 @@ plot_flux_timeseries_by_igbp <- function(annual_data, flux_var = "NEE_VUT_REF") 
     theme_classic(base_size = 14)
 }
 
-
-
-
-
 interannual_climate_summary <- function(annual_data) {
   annual_data %>%
     group_by(site) %>%
