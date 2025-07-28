@@ -4,7 +4,6 @@
 # ------------------------
 
 # Load required libraries
-library(dplyr)
 library(readr)
 library(stringr)
 library(purrr)
@@ -18,6 +17,7 @@ library(minpack.lm) # for phenology code
 library(patchwork)
 library(fs) # for file paths
 library(countrycode)
+library(dplyr)
 
 # ------------------------
 # Configuration (Global)
