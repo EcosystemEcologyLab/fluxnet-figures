@@ -42,10 +42,15 @@ walk(site_zip_paths, function(site_zip_path) {
     path_ext_remove() |>
     str_replace("ARCHIVE", "FLUXNET_DD") |>
     path_ext_set("csv")
+  yy_csv <- site_zip_path |> 
+    path_file() |> 
+    path_ext_remove() |> 
+    str_replace("ARCHIVE", "FLUXNET_YY") |> 
+    path_ext_set("csv")
 
   unzip(
     site_zip_path,
-    files = c(siteinfo_csv, dd_csv),
+    files = c(siteinfo_csv, dd_csv, yy_csv),
     exdir = path_ext_remove(site_zip_path)
   )
 })
