@@ -5,7 +5,7 @@
 # There is also an R package interface to the "carbon portal"
 # (https://github.com/bluegreen-labs/icoscp).  This script assumes you've
 # downloaded a zip archive of all the data from this URL:
-# https://github.com/bluegreen-labs/icoscp
+# https://www.icos-cp.eu/data-products/ecosystem-release
 library(fs)
 library(dplyr)
 library(stringr)
