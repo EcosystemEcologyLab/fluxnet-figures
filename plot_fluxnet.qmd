@@ -64,8 +64,17 @@ library(measurements)
 library(ggnewscale)
 library(fs)
 
+#source data loading functions
+source("R/fcn_utility_FLUXNET.R")
+
 #set default ggplot2 theme
 theme_set(theme_classic())
+```
+
+```{r}
+site_metadata <- load_fluxnet_metadata()
+fluxnet_annual <- load_and_clean_annual_data(site_metadata)
+fluxnet_daily <- load_and_clean_daily_data(site_metadata)
 ```
 
 ### Download site metadata {.unnumbered .unlisted}
@@ -267,7 +276,8 @@ window_size <- 51
 #| code-fold: true
 #| warning: false
 
-total_ts_gpp <- single_site_daily %>%
+total_ts_gpp <- fluxnet_daily %>%
+  filter(site == first(site)) |>
   mutate(
     running_mean_gpp = stats::filter(
       GPP_NT_VUT_REF,
@@ -276,17 +286,17 @@ total_ts_gpp <- single_site_daily %>%
   )
 
 yr_start_dates <- total_ts_gpp %>%
-  select(date) %>%
-  filter(grepl("-01-01", date)) %>%
-  pull()
+  filter(grepl("-01-01", date_object)) %>%
+  pull(date_object)
 
-ggplot(total_ts_gpp, aes(x = date, y = GPP_NT_VUT_REF)) +
+ggplot(total_ts_gpp, aes(x = date_object, y = GPP_NT_VUT_REF)) +
   geom_point(size = 0.5, color = "darkgrey") +
   geom_line(aes(y = running_mean_gpp), color = "blue", lwd = 1) +
   geom_vline(xintercept = yr_start_dates, color = "grey", alpha = 0.5) +
   labs(x = "Date", y = "GPP (smoothed)")
 
-total_ts_reco <- single_site_daily %>%
+total_ts_reco <- fluxnet_daily %>%
+  filter(site == first(site)) |>
   mutate(
     running_mean_reco = stats::filter(
       RECO_NT_VUT_REF,
@@ -294,13 +304,14 @@ total_ts_reco <- single_site_daily %>%
     )
   )
 
-ggplot(total_ts_reco, aes(x = date, y = RECO_NT_VUT_REF)) +
+ggplot(total_ts_reco, aes(x = date_object, y = RECO_NT_VUT_REF)) +
   geom_point(size = 0.5, color = "darkgrey") +
   geom_line(aes(y = running_mean_reco), color = "blue", lwd = 1) +
   geom_vline(xintercept = yr_start_dates, color = "grey", alpha = 0.5) +
   labs(x = "Date", y = "RECO (smoothed)")
 
-total_ts_nee <- single_site_daily %>%
+total_ts_nee <- fluxnet_daily %>%
+  filter(site == first(site)) |>
   mutate(
     running_mean_nee = stats::filter(
       NEE_VUT_REF,
@@ -308,7 +319,7 @@ total_ts_nee <- single_site_daily %>%
     )
   )
 
-ggplot(total_ts_nee, aes(x = date, y = NEE_VUT_REF)) +
+ggplot(total_ts_nee, aes(x = date_object, y = NEE_VUT_REF)) +
   geom_point(size = 0.5, color = "darkgrey") +
   geom_line(aes(y = running_mean_nee), color = "blue", lwd = 1) +
   geom_vline(xintercept = yr_start_dates, color = "grey", alpha = 0.5) +
@@ -321,8 +332,7 @@ Same smoother as used for single site.
 
 ```{r}
 #| warning: false
-total_ts_ms <- multiple_sites_daily %>%
-  left_join(site_metadata, by = c("site" = "SITE_ID")) %>%
+total_ts_ms <- fluxnet_daily %>%
   group_by(site) %>%
   mutate(
     running_mean_gpp = stats::filter(
@@ -340,8 +350,8 @@ total_ts_ms <- multiple_sites_daily %>%
   )
 
 yr_start_dates_ms <- total_ts_ms %>%
-  filter(grepl("-01-01", date)) %>%
-  pull(date)
+  filter(grepl("-01-01", date_object)) %>%
+  pull(date_object)
 ```
 
 Show entire time series of GPP for all sites, with points for daily values.
@@ -352,7 +362,13 @@ Show entire time series of GPP for all sites, with points for daily values.
 
 ggplot(
   total_ts_ms,
-  aes(x = date, y = GPP_NT_VUT_REF, color = site, fill = site)
+  aes(
+    x = date_object,
+    y = GPP_NT_VUT_REF,
+    color = country,
+    fill = country,
+    group = site
+  )
 ) +
   geom_point(size = 0.1, alpha = 0.1, key_glyph = draw_key_rect) +
   geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
