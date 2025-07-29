@@ -4,7 +4,6 @@
 # ------------------------
 
 # Load required libraries
-library(dplyr)
 library(readr)
 library(stringr)
 library(purrr)
@@ -18,6 +17,7 @@ library(minpack.lm) # for phenology code
 library(patchwork)
 library(fs) # for file paths
 library(countrycode)
+library(dplyr)
 
 # ------------------------
 # Configuration (Global)
@@ -60,16 +60,16 @@ load_and_cache <- function(patterns, cache_file, extract_site_func) {
 }
 
 clean_fluxnet_data <- function(data, site_metadata) {
-  numeric_cols <- names(select(data, where(is.numeric)))
+  numeric_cols <- names(dplyr::select(data, where(is.numeric)))
   data_cleaned <- data %>%
     mutate(across(all_of(numeric_cols), ~ ifelse(. < -9000, NA, .))) %>%
-    select(-any_of(names(site_metadata))) %>%
+    dplyr::select(-any_of(names(site_metadata))) %>%
     left_join(site_metadata, by = c("site" = "SITE_ID"))
   return(data_cleaned)
 }
 
 add_site_metadata <- function(data, metadata) {
-  data %>% select(-any_of(names(metadata))) %>%
+  data %>% dplyr::select(-any_of(names(metadata))) %>%
     left_join(metadata, by = c("site" = "SITE_ID"))
 }
 
@@ -79,7 +79,7 @@ add_site_metadata <- function(data, metadata) {
 
 load_fluxnet_metadata <- function() {
   af_meta <- amf_site_info() %>%
-    select(SITE_ID, SITE_NAME, COUNTRY, STATE, IGBP,
+    dplyr::select(SITE_ID, SITE_NAME, COUNTRY, STATE, IGBP,
            LOCATION_LAT, LOCATION_LONG, LOCATION_ELEV,
            CLIMATE_KOEPPEN, MAT, MAP) %>%
     mutate(DATA_SOURCE = "AmeriFlux")
@@ -89,14 +89,14 @@ load_fluxnet_metadata <- function() {
   icos_meta <- map_dfr(icos_files, function(path) {
     read_csv(path, col_types = cols(SITE_ID = col_character(), GROUP_ID = col_character(),
                                     VARIABLE = col_character(), DATAVALUE = col_character())) %>%
-      select(SITE_ID, VARIABLE, DATAVALUE) %>%
+      dplyr::select(SITE_ID, VARIABLE, DATAVALUE) %>%
       group_by(SITE_ID, VARIABLE) %>%
       summarize(DATAVALUE = first(DATAVALUE), .groups = "drop") %>%
       pivot_wider(names_from = VARIABLE, values_from = DATAVALUE) %>%
       mutate(country_code = str_extract(SITE_ID, "[A-Z]{2}")) |> 
       # Translate 2 letter country codes to english names, falling back on country code if it doesn't work
       mutate(COUNTRY = coalesce(countrycode(country_code, origin = "iso2c", destination = "country.name.en"), country_code)) |> 
-      select(-country_code)
+      dplyr::select(-country_code)
   })
   
   icos_meta_clean <- icos_meta %>%
