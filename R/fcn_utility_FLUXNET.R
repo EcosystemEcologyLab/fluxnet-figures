@@ -80,8 +80,8 @@ add_site_metadata <- function(data, metadata) {
 load_fluxnet_metadata <- function() {
   af_meta <- amf_site_info() %>%
     dplyr::select(SITE_ID, SITE_NAME, COUNTRY, STATE, IGBP,
-           LOCATION_LAT, LOCATION_LONG, LOCATION_ELEV,
-           CLIMATE_KOEPPEN, MAT, MAP) %>%
+                  LOCATION_LAT, LOCATION_LONG, LOCATION_ELEV,
+                  CLIMATE_KOEPPEN, MAT, MAP) %>%
     mutate(DATA_SOURCE = "AmeriFlux")
   
   icos_files <- fs::dir_ls(path = "data", regexp = "ICOSETC_.*_SITEINFO_L2\\.csv$", recurse = TRUE)
@@ -93,9 +93,9 @@ load_fluxnet_metadata <- function() {
       group_by(SITE_ID, VARIABLE) %>%
       summarize(DATAVALUE = first(DATAVALUE), .groups = "drop") %>%
       pivot_wider(names_from = VARIABLE, values_from = DATAVALUE) %>%
-      mutate(country_code = str_extract(SITE_ID, "[A-Z]{2}")) |> 
-      # Translate 2 letter country codes to english names, falling back on country code if it doesn't work
-      mutate(COUNTRY = coalesce(countrycode(country_code, origin = "iso2c", destination = "country.name.en"), country_code)) |> 
+      mutate(country_code = str_extract(SITE_ID, "[A-Z]{2}")) %>%
+      # Translate 2-letter country codes to English names, fallback to code
+      mutate(COUNTRY = coalesce(countrycode(country_code, origin = "iso2c", destination = "country.name.en"), country_code)) %>%
       dplyr::select(-country_code)
   })
   
@@ -103,8 +103,8 @@ load_fluxnet_metadata <- function() {
     transmute(
       SITE_ID,
       SITE_NAME,
-      # COUNTRY = NA_character_, 
       STATE = NA_character_,
+      COUNTRY,
       IGBP,
       LOCATION_LAT = as.numeric(LOCATION_LAT),
       LOCATION_LONG = as.numeric(LOCATION_LONG),
@@ -116,8 +116,10 @@ load_fluxnet_metadata <- function() {
     )
   
   bind_rows(af_meta, icos_meta_clean) %>%
-    distinct(SITE_ID, .keep_all = TRUE)
+    distinct(SITE_ID, .keep_all = TRUE) %>%
+    mutate(site = SITE_ID)
 }
+
 
 # ------------------------
 # Data Loaders
