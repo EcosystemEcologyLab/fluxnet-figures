@@ -63,8 +63,8 @@ clean_fluxnet_data <- function(data, site_metadata) {
   numeric_cols <- names(dplyr::select(data, where(is.numeric)))
   data_cleaned <- data %>%
     mutate(across(all_of(numeric_cols), ~ ifelse(. < -9000, NA, .))) %>%
-    dplyr::select(-any_of(names(site_metadata))) %>%
-    left_join(site_metadata, by = c("site" = "SITE_ID"))
+    dplyr::select(-any_of(names(site_metadata)[names(site_metadata != "site")])) %>% 
+    left_join(site_metadata, by = join_by(site))
   return(data_cleaned)
 }
 
