@@ -29,23 +29,14 @@ execute:
   - Add overall trend line to interannual met variability plots
   - Facet all figures for interannual met variability
 
-## Data
-### Install libraries {.unnumbered .unlisted}
-
-These are not on CRAN so require downloading directly from their GitHub repos using `devtools`. This code chunk only needs to be run once (in a while) and it could take a while depending on if you choose to update all the dependencies. 
-
-::: {.callout-note}
-Need dev version of `amerifluxr` package to get `amf_download_fluxnet` function. 
-:::
 
 ```{r}
 #| eval: false
-
-devtools::install_github("chuhousen/amerifluxr")
-devtools::install_github("valentinitnelav/plotbiomes")
+# Need dev version of `amerifluxr` package to get `amf_download_fluxnet` function.
+pak::pak("chuhousen/amerifluxr")
+pak::pak("valentinitnelav/plotbiomes")
 ```
 
-### Read in libraries {.unnumbered .unlisted}
 
 ```{r}
 #| label: setup
@@ -75,6 +66,7 @@ theme_set(theme_classic() + theme(axis.title = element_markdown()))
 ```
 
 ```{r}
+#| label: load-data
 site_metadata <- load_fluxnet_metadata()
 fluxnet_annual <- load_and_clean_annual_data(site_metadata)
 fluxnet_daily <- load_and_clean_daily_data(site_metadata)
@@ -85,7 +77,7 @@ fluxnet_daily <- load_and_clean_daily_data(site_metadata)
 
 #set up all the possible plot labels as objects for easy reference.  These get formatted by `marquee`
 
-lab_precip_annual <- "mm y<sup>-1</sup>"
+lab_precip_annual <- "Precipitation (mm y<sup>-1</sup>)"
 lab_gpp_daily <- "GPP (g C m<sup>-2</sup> d<sup>-1</sup>)"
 lab_nee_daily <- "NEE (g C m<sup>-2</sup> d<sup>-1</sup>)"
 lab_reco_daily <- "RECO (g C m<sup>-2</sup> d<sup>-1</sup>)"
@@ -611,17 +603,19 @@ ggplot(
   ) +
   scale_x_continuous(expand = c(0, 0), limits = c(0, upper_axis_limit)) +
   scale_y_continuous(expand = c(0, 0), limits = c(0, upper_axis_limit)) +
-  guides(x.sec = "axis", y.sec = "axis") +
+  # guides(x.sec = "axis", y.sec = "axis") +
+  guides(fill = "none") +
   labs(
     x = "Latent Heat Flux (W m<sup>-2</sup>)",
     y = "Sensible Heat Flux (W m<sup>-2</sup>)"
   ) +
   theme(
+    panel.border = element_rect(fill = NA),
     axis.title = element_markdown(),
-    axis.ticks.x.top = element_blank(),
-    axis.text.x.top = element_blank(),
-    axis.ticks.y.right = element_blank(),
-    axis.text.y.right = element_blank()
+    # axis.ticks.x.top = element_blank(),
+    # axis.text.x.top = element_blank(),
+    # axis.ticks.y.right = element_blank(),
+    # axis.text.y.right = element_blank()
   )
 
 
@@ -651,7 +645,7 @@ unique(Whittaker_biomes$biome)
 Get mean values of annual precipitation (P_F) and temperature (TA_F) for each site, and convert precipitation to match Whittaker dataset units (mm/yr to cm/yr). 
 
 ```{r}
-whittaker_format <- multiple_sites_annual %>%
+whittaker_format <- fluxnet_annual %>%
   group_by(site) %>%
   summarize(mean_precip = mean(P_F), mean_temp = mean(TA_F)) %>%
   mutate(mean_precip_cm = conv_unit(mean_precip, "mm", "cm")) %>%
@@ -709,6 +703,9 @@ The energy flux variables are listed below. The ones that have multiple possible
 Parsing dates and times: 
 
 ```{r}
+#| eval: false
+
+#not working currently
 rad_dt <- single_site_hourly %>%
   mutate(
     date = date(datetime_start),
@@ -716,10 +713,11 @@ rad_dt <- single_site_hourly %>%
   )
 ```
 
-Show average half-hourly shortwave, longwave, and total radiation for a single site. Data collection starts `{r} min(rad_dt$date)` and ends `{r} max(rad_dt$date)`. 
+Show average half-hourly shortwave, longwave, and total radiation for a single site. Data collection starts `min(rad_dt$date)` and ends `max(rad_dt$date)`. 
 
 ```{r}
 #| code-fold: true
+#| eval: false
 
 rad_means <- rad_dt %>%
   group_by(time) %>%
