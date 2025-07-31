@@ -12,6 +12,9 @@ format:
     toc-expand: 2
     toc-location: left
     css: styles.css
+    code-fold: true
+execute: 
+  warning: false
 ---
 
 ## TODO list
@@ -697,11 +700,21 @@ ggplot(
 ERIC: I thought it was just like this
 
 ```{r}
+library(geomtextpath)
 ggplot(multiple_sites_annual, aes(x = TA_F, y = NEE_VUT_REF)) +
-  geom_smooth(se = FALSE, color = "black") +
-  geom_smooth(se = FALSE, aes(color = site), method = "lm") +
-  # geom_point(aes(color = site)) +
+  geom_smooth(se = FALSE, color = "black", linewidth = 0.5) +
+  # geom_smooth(se = FALSE, aes(color = site), method = "lm") +
+  geom_textsmooth(
+    aes(color = site, group = site, label = site),
+    se = FALSE,
+    method = "lm",
+    offset = unit(5, "pt"),
+    gap = FALSE,
+    textcolor = "black",
+    size = 3
+  ) +
   labs(x = "Temperature (C)", y = "Annual NEE") +
+  guides(color = "none") +
   theme_minimal()
 ```
 
