@@ -65,9 +65,65 @@ source("R/fcn_utility_FLUXNET.R")
 theme_set(theme_classic() + theme(axis.title = element_markdown()))
 ```
 
+## Download data
+
+```{r}
+amf_sites <- amerifluxr::amf_sites()
+amf_sites$COUNTRY |> unique()
+amf_sites_nam <- amf_sites |>
+  filter(COUNTRY %in% c("Mexico", "Canada", "USA")) |>
+  pull(SITE_ID)
+```
+
+Code for downloading Ameriflux data (all sites in North America)
+
+```{r}
+#| eval: false
+#| echo: true
+
+zip_paths <- amf_download_fluxnet(
+  user_id = "Aariq",
+  user_email = "scottericr@gmail.com",
+  site_id = amf_sites_nam,
+  data_product = "FLUXNET",
+  data_variant = "FULLSET",
+  data_policy = "CCBY4.0",
+  agree_policy = TRUE,
+  intended_use = "synthesis",
+  intended_use_text = "creating pipeline for standardized figures",
+  out_dir = "data/AMF"
+)
+
+# Only unzip files needed
+walk(
+  zip_paths,
+  \(zip_path) {
+    t <- c("DD", "YY", "HH") #which FULLSET CSVs to extract
+    exdir <- fs::path_ext_remove(zip_path)
+    #split apart the file name and insert `t` in the right place
+    file_vect <- zip_path |>
+      path_file() |>
+      stringr::str_split("_") |>
+      pluck(1)
+    files <- paste(
+      paste(file_vect[1:4], collapse = "_"),
+      t,
+      paste(file_vect[5:6], collapse = "_"),
+      sep = "_"
+    ) |>
+      fs::path_ext_set("csv")
+
+    unzip(zip_path, files = files, exdir = exdir)
+  },
+  .progress = TRUE
+)
+```
+
+
 ```{r}
 #| label: load-data
-site_metadata <- load_fluxnet_metadata()
+site_metadata <- load_fluxnet_metadata() |>
+  filter(SITE_ID %in% amf_sites_nam)
 fluxnet_annual <- load_and_clean_annual_data(site_metadata)
 fluxnet_daily <- load_and_clean_daily_data(site_metadata)
 ```
