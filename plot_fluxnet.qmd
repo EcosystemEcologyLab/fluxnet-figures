@@ -119,13 +119,65 @@ walk(
 )
 ```
 
+## Read in data
+
 
 ```{r}
 #| label: load-data
-site_metadata <- load_fluxnet_metadata() |>
-  filter(SITE_ID %in% amf_sites_nam)
-fluxnet_annual <- load_and_clean_annual_data(site_metadata)
-fluxnet_daily <- load_and_clean_daily_data(site_metadata)
+# site_metadata <- load_fluxnet_metadata() |>
+#   filter(SITE_ID %in% amf_sites_nam)
+# fluxnet_annual <- load_and_clean_annual_data(site_metadata)
+# fluxnet_daily <- load_and_clean_daily_data(site_metadata)
+
+fluxnet_files <- tibble(
+  path = dir_ls(
+    "data/",
+    regexp = "AMF_[^_]+_FLUXNET_FULLSET_(?:YY|DD|HH|WW)_[0-9]{4}-[0-9]{4}_.*\\.csv$",
+    recurse = TRUE
+  )
+) |>
+  mutate(
+    filename = path_file(path),
+    to_split = path_ext_remove(filename)
+  ) |>
+  separate_wider_delim(
+    to_split,
+    names = c(
+      "source",
+      "SITE_ID",
+      "fluxnet",
+      "set",
+      "period",
+      "yr_range",
+      "junk"
+    ),
+    delim = "_"
+  ) |>
+  select(-fluxnet, -junk) |>
+  separate_wider_delim(
+    SITE_ID,
+    names = c("country_code", "site"),
+    delim = "-",
+    cols_remove = FALSE
+  )
+
+#check if I got all the sites
+length(unique(fluxnet_files$SITE_ID))
+length(amf_sites_nam)
+missing <- setdiff(amf_sites_nam, unique(fluxnet_files$SITE_ID))
+missing #amerifluxr says it cant find data for these
+
+fluxnet_annual <- fluxnet_files |>
+  filter(period == "YY") |>
+  pull(path) |>
+  map(read_csv) |>
+  list_rbind()
+
+fluxnet_daily <- fluxnet_files |>
+  filter(period == "DD") |>
+  pull(path) |>
+  map(read_csv) |>
+  list_rbind()
 ```
 
 ```{r}
