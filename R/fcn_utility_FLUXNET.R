@@ -41,69 +41,147 @@ library(tibble)
 #########
 ######### discover_AMF_files
 ######### to find out how many AMF fluxnet files are available 
-# Example usage:
-# amf_manifest <- discover_AMF_files("data")
+library(fs)
+library(stringr)
+library(dplyr)
+library(tidyr)
+library(tibble)
+
+# ------------------------
+# discover_AMF_files()
+# ------------------------
+# Scans for AmeriFlux “FLUXNET2015” FULLSET & SUBSET files,
+# then builds a manifest with columns:
+#   path, data_center, site, data_product, dataset, time_integral, start_year, end_year
 discover_AMF_files <- function(data_dir = "data") {
+  library(fs); library(stringr); library(dplyr);
+  library(tidyr); library(tibble)
+  
+  all_csvs <- fs::dir_ls(data_dir, recurse = TRUE, regexp = "\\.csv$")
+  amf_files <- all_csvs[
+    str_detect(basename(all_csvs),
+               "^AMF_[^_]+_FLUXNET_(FULLSET|SUBSET)_(YY|DD|HH|WW)_[0-9]{4}-[0-9]{4}_.*\\.csv$")
+  ]
+  
+  manifest <- tibble(path = amf_files) %>%
+    mutate(filename = basename(path)) %>%
+    extract(
+      filename,
+      into   = c("data_center","site","data_product",
+                 "dataset","time_integral",
+                 "start_year","end_year"),
+      regex  = "^(AMF)_([^_]+)_(FLUXNET)_(FULLSET|SUBSET)_(YY|DD|HH|WW)_([0-9]{4})-([0-9]{4})_.*\\.csv$",
+      remove = FALSE,
+      convert= TRUE
+    ) %>%
+    select(path, filename, data_center, site, data_product,
+           dataset, time_integral,
+           start_year, end_year)
+  
+  
+  
+  manifest %>%
+    group_by(time_integral, dataset) %>%
+    summarise(
+      unique_sites     = n_distinct(site),
+      total_site_years = sum(end_year - start_year + 1),
+      n_files          = n(),
+      .groups          = "drop"
+    ) %>%
+    arrange(time_integral, dataset) %>%
+    rowwise() %>%
+    do({
+      cat(sprintf("• %s / %s → %d sites, %d site-years across %d files\n",
+                  .$time_integral, .$dataset,
+                  .$unique_sites, .$total_site_years, .$n_files))
+      tibble()
+    })
+  
+  invisible(manifest)
+}
+
+
+discover_ICOS_files <- function(data_dir = "data") {
   library(fs)
   library(stringr)
   library(dplyr)
   library(tidyr)
   library(tibble)
   
-  # 1. List all CSVs
-  all_csvs <- fs::dir_ls(path = data_dir, recurse = TRUE, regexp = "\\.csv$")
+  # 1. Grab every CSV under data_dir
+  all_csvs <- fs::dir_ls(data_dir, recurse = TRUE, regexp = "\\.csv$")
   
-  # 2. Filter to AMF FULLSET FLUXNET
-  amf_files <- dir_ls(data_dir, recurse = TRUE, regexp = "\\.csv$") %>%
-    # only those starting with AMF_ and containing the full pattern
-    keep(~ str_detect(basename(.x),
-                      "^AMF_[^_]+_FLUXNET_FULLSET_(?:YY|DD|HH|WW)_[0-9]{4}-[0-9]{4}_.*\\.csv$")
-    )
-
-  
-  
-
-  
-  
-  # 3. Build the manifest
-  manifest <- tibble(path = amf_files) %>%
+  # 2a. Legacy FLX_FULLSET / SUBSET files
+  flx_manifest <- tibble(path = all_csvs) %>%
+    filter(
+      str_detect(basename(path),
+                 "^FLX_[^_]+_FLUXNET2015_(FULLSET|SUBSET)_(YY|DD|HH|WW)_[0-9]{4}-[0-9]{4}_.*\\.csv$")
+    ) %>%
     mutate(filename = basename(path)) %>%
-    tidyr::extract(
+    extract(
       col     = "filename",
-      into    = c("data_center", "site", "data_product", "dataset",
-                  "time_integral", "start_year", "end_year"),
-      regex   = "^(AMF)_([^_]+)_([^_]+)_([^_]+)_(YY|DD|HH|WW)_([0-9]{4})-([0-9]{4})_.*\\.csv$",
+      into    = c("data_center","site","data_product",
+                  "dataset","time_integral",
+                  "start_year","end_year"),
+      regex   = "^(FLX)_([^_]+)_(FLUXNET2015)_(FULLSET|SUBSET)_(YY|DD|HH|WW)_([0-9]{4})-([0-9]{4})_.*\\.csv$",
       remove  = FALSE,
       convert = TRUE
-    )
-  
-  # 4. Print summary per integral
-  manifest %>%
-    group_by(time_integral) %>%
-    summarise(
-      unique_sites = n_distinct(site),
-      total_years  = sum(end_year - start_year + 1),
-      n_files      = n(),
-      .groups      = "drop"
     ) %>%
-    arrange(time_integral) %>%
+    select(path, data_center, site, data_product,
+           dataset, time_integral,
+           start_year, end_year)
+  
+  # 2b. Modern ICOSETC L2 files
+  icos_manifest <- tibble(path = all_csvs) %>%
+    filter(
+      str_detect(basename(path),
+                 "^ICOSETC_[^_]+_FLUXNET")
+    ) %>%
+    mutate(filename = basename(path)) %>%
+    extract(
+      col     = "filename",
+      into    = c("data_center","site","data_product",
+                  "time_integral","dataset"),
+      regex   = "^(ICOSETC)_([^_]+)_(FLUXNET)_(DD|HH|MM|WW|YY_INTERIM|YY)_(L2)\\.csv$",
+      remove  = FALSE
+    ) %>%
+    # these don’t embed years in their names:
+    mutate(
+      start_year = NA_integer_,
+      end_year   = NA_integer_
+    ) %>%
+    select(path, filename, data_center, site, data_product,
+           dataset, time_integral,
+           start_year, end_year)
+  
+  # 3. Combine and enforce the same columns as AMF
+  manifest <- bind_rows(flx_manifest, icos_manifest)
+  
+  # 4. Print the same style of summary as discover_AMF_files()
+  manifest %>%
+    group_by(time_integral, dataset) %>%
+    summarise(
+      unique_sites     = n_distinct(site),
+      total_site_years = sum(end_year - start_year + 1, na.rm = TRUE),
+      n_files          = n(),
+      .groups          = "drop"
+    ) %>%
+    arrange(time_integral, dataset) %>%
     rowwise() %>%
     do({
-      cat(
-        sprintf(
-          "• %s files → %d unique sites, %d total site-years across %d files\n",
-          .$time_integral, .$unique_sites, .$total_years, .$n_files
-        )
-      )
-      tibble() 
+      cat(sprintf(
+        "• %s / %s → %d sites, %d total site-years across %d files\n",
+        .$time_integral, .$dataset,
+        .$unique_sites,   .$total_site_years, .$n_files
+      ))
+      tibble()
     })
   
-  # 5. Return the manifest data frame
-  manifest
+  invisible(manifest)
 }
 
 
-#######
+
 #######
 #######
 
