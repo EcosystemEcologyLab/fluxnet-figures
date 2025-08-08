@@ -38,15 +38,114 @@ library(dplyr)
 library(tidyr)
 library(tibble)
 
+### Unzip
+  # out <- unzip_fluxnet_zips("data/FLUXNET/AMF")
+  # # all the CSVs:
+  # head(out$successes)
+  # # what zipped files didn’t unzip (and why):
+  # out$failures  
+unzip_fluxnet_zips <- function(location,
+                               exdir     = file.path(location, "unzipped"),
+                               overwrite = TRUE) {
+  library(fs); library(stringr); library(dplyr); library(purrr); library(tibble)
+  
+  zip_paths <- fs::dir_ls(location, recurse = TRUE, regexp = "\\.zip$")
+  dir.create(exdir, recursive = TRUE, showWarnings = FALSE)
+  
+  # prepare empty failures list
+  failures <- tibble(
+    zip   = character(),
+    stage = character(),
+    error = character()
+  )
+  
+  # process each ZIP
+  successes <- map_dfr(zip_paths, function(zf) {
+    fname <- basename(zf)
+    parts <- strsplit(tools::file_path_sans_ext(fname), "_")[[1]]
+    if (length(parts) < 5) {
+      failures <<- add_row(failures,
+                           zip   = fname,
+                           stage = "name-parse",
+                           error = "unexpected filename structure")
+      return(NULL)
+    }
+    
+    data_center  <- parts[1]
+    site         <- parts[2]
+    data_product <- parts[3]
+    dataset      <- parts[4]
+    yrs          <- tryCatch(strsplit(parts[5], "-")[[1]],
+                             error = function(e) NULL)
+    if (is.null(yrs) || length(yrs)!=2) {
+      failures <<- add_row(failures,
+                           zip   = fname,
+                           stage = "year-parse",
+                           error = "cannot split year-range")
+      return(NULL)
+    }
+    start_year   <- as.integer(yrs[1])
+    end_year     <- as.integer(yrs[2])
+    
+    # list contents
+    contents <- tryCatch(
+      unzip(zf, list = TRUE),
+      error = function(e) {
+        failures <<- add_row(failures,
+                             zip   = fname,
+                             stage = "list-contents",
+                             error = e$message)
+        NULL
+      }
+    )
+    if (is.null(contents)) return(NULL)
+    
+    csvs <- contents$Name[grepl("\\.csv$", contents$Name)]
+    if (length(csvs)==0) {
+      failures <<- add_row(failures,
+                           zip   = fname,
+                           stage = "filter-csv",
+                           error = "no .csv entries in archive")
+      return(NULL)
+    }
+    
+    # extract CSVs
+    extracted <- tryCatch(
+      unzip(zf, files = csvs, exdir = exdir, overwrite = overwrite),
+      error = function(e) {
+        failures <<- add_row(failures,
+                             zip   = fname,
+                             stage = "extract",
+                             error = e$message)
+        character(0)
+      }
+    )
+    if (length(extracted)==0) return(NULL)
+    
+    # one row per CSV
+    tibble(
+      file         = file.path(exdir, extracted),
+      data_center  = data_center,
+      site         = site,
+      data_product = data_product,
+      dataset      = dataset,
+      start_year   = start_year,
+      end_year     = end_year
+    )
+  })
+  
+  list(
+    successes = successes,
+    failures  = failures
+  )
+}
+
+
+
+
 #########
 ######### discover_AMF_files
 ######### to find out how many AMF fluxnet files are available 
-library(fs)
-library(stringr)
-library(dplyr)
-library(tidyr)
-library(tibble)
-
 # ------------------------
 # discover_AMF_files()
 # ------------------------
@@ -54,53 +153,81 @@ library(tibble)
 # then builds a manifest with columns:
 #   path, data_center, site, data_product, dataset, time_integral, start_year, end_year
 discover_AMF_files <- function(data_dir = "data") {
-  library(fs); library(stringr); library(dplyr);
-  library(tidyr); library(tibble)
-  
-  all_csvs <- fs::dir_ls(data_dir, recurse = TRUE, regexp = "\\.csv$")
-  amf_files <- all_csvs[
-    str_detect(basename(all_csvs),
-               "^AMF_[^_]+_FLUXNET_(FULLSET|SUBSET)_(YY|DD|HH|WW)_[0-9]{4}-[0-9]{4}_.*\\.csv$")
-  ]
-  
-  manifest <- tibble(path = amf_files) %>%
-    mutate(filename = basename(path)) %>%
-    extract(
-      filename,
-      into   = c("data_center","site","data_product",
-                 "dataset","time_integral",
-                 "start_year","end_year"),
-      regex  = "^(AMF)_([^_]+)_(FLUXNET)_(FULLSET|SUBSET)_(YY|DD|HH|WW)_([0-9]{4})-([0-9]{4})_.*\\.csv$",
-      remove = FALSE,
-      convert= TRUE
-    ) %>%
-    select(path, filename, data_center, site, data_product,
-           dataset, time_integral,
-           start_year, end_year)
-  
-  
-  
-  manifest %>%
-    group_by(time_integral, dataset) %>%
-    summarise(
-      unique_sites     = n_distinct(site),
-      total_site_years = sum(end_year - start_year + 1),
-      n_files          = n(),
-      .groups          = "drop"
-    ) %>%
-    arrange(time_integral, dataset) %>%
-    rowwise() %>%
-    do({
-      cat(sprintf("• %s / %s → %d sites, %d site-years across %d files\n",
-                  .$time_integral, .$dataset,
-                  .$unique_sites, .$total_site_years, .$n_files))
-      tibble()
-    })
-  
-  invisible(manifest)
+library(fs); library(stringr); library(dplyr)
+library(tidyr); library(tibble)
+
+all_csvs <- fs::dir_ls(data_dir, recurse = TRUE, regexp = "\\.csv$")
+
+# 1) Standard FLUXNET files (including HR)
+std_pat <- 
+  "^AMF_([^_]+)_FLUXNET_(FULLSET|SUBSET|ERA5)_(YY|DD|HH|MM|WW|HR)_([0-9]{4})-([0-9]{4})_.*\\.csv$"
+std <- tibble(path = all_csvs) %>%
+  filter(str_detect(basename(path), std_pat)) %>%
+  mutate(filename = basename(path)) %>%
+  extract(
+    filename,
+    into    = c("site","dataset","time_integral","start_year","end_year"),
+    regex   = std_pat, remove = FALSE, convert = TRUE
+  ) %>%
+  mutate(
+    data_center  = "AMF",
+    data_product = "FLUXNET"
+  ) %>%
+  select(path, filename, data_center, site, data_product,
+         dataset, time_integral, start_year, end_year)
+
+# 2) AUXMETEO / AUXNEE (no separate time_integral)
+aux_pat <-
+  "^AMF_([^_]+)_FLUXNET_(AUXMETEO|AUXNEE)_([0-9]{4})-([0-9]{4})_.*\\.csv$"
+aux <- tibble(path = all_csvs) %>%
+  filter(str_detect(basename(path), aux_pat)) %>%
+  mutate(filename = basename(path)) %>%
+  extract(
+    filename,
+    into    = c("site","dataset","start_year","end_year"),
+    regex   = aux_pat, remove = FALSE, convert = TRUE
+  ) %>%
+  mutate(
+    data_center   = "AMF",
+    data_product  = "FLUXNET",
+    time_integral = NA_character_
+  ) %>%
+  select(path, filename, data_center, site, data_product,
+         dataset, time_integral, start_year, end_year)
+
+# 3) Now coerce types and stitch together
+make_types <- function(df) {
+  df %>% mutate(
+    across(c(data_center, site, data_product, dataset, time_integral),
+           as.character),
+    across(c(start_year, end_year), as.integer)
+  )
+}
+manifest <- bind_rows(make_types(std), make_types(aux))
+
+# 4) Summarize
+manifest %>%
+  group_by(time_integral = coalesce(time_integral, "AUX"), dataset) %>%
+  summarise(
+    unique_sites     = n_distinct(site),
+    total_site_years = sum(end_year - start_year + 1, na.rm=TRUE),
+    n_files          = n(),
+    .groups          = "drop"
+  ) %>%
+  arrange(time_integral, dataset) %>%
+  rowwise() %>%
+  do({
+    cat(sprintf("• %s / %s → %d sites, %d site-years across %d files\n",
+                .$time_integral, .$dataset,
+                .$unique_sites,   .$total_site_years, .$n_files))
+    tibble()
+  })
+
+invisible(manifest)
 }
 
 
+#####Discover ICOS files
 discover_ICOS_files <- function(data_dir = "data") {
   library(fs)
   library(stringr)
@@ -123,11 +250,11 @@ discover_ICOS_files <- function(data_dir = "data") {
       into    = c("data_center","site","data_product",
                   "dataset","time_integral",
                   "start_year","end_year"),
-      regex   = "^(FLX)_([^_]+)_(FLUXNET2015)_(FULLSET|SUBSET)_(YY|DD|HH|WW)_([0-9]{4})-([0-9]{4})_.*\\.csv$",
+      regex   = "^(FLX)_([^_]+)_(FLUXNET2015)_(FULLSET|SUBSET)_(DD|HH|MM|WW|YY_INTERIM|YY|AUXNEE|AUXMETEO)_([0-9]{4})-([0-9]{4})_.*\\.csv$",
       remove  = FALSE,
       convert = TRUE
     ) %>%
-    select(path, data_center, site, data_product,
+    select(path, filename, data_center, site, data_product,
            dataset, time_integral,
            start_year, end_year)
   
@@ -142,7 +269,7 @@ discover_ICOS_files <- function(data_dir = "data") {
       col     = "filename",
       into    = c("data_center","site","data_product",
                   "time_integral","dataset"),
-      regex   = "^(ICOSETC)_([^_]+)_(FLUXNET)_(DD|HH|MM|WW|YY_INTERIM|YY)_(L2)\\.csv$",
+      regex   = "^(ICOSETC)_([^_]+)_(FLUXNET)_(DD|HH|MM|WW|YY_INTERIM|YY|AUXNEE|AUXMETEO)_(L2)\\.csv$",
       remove  = FALSE
     ) %>%
     # these don’t embed years in their names:
@@ -180,10 +307,156 @@ discover_ICOS_files <- function(data_dir = "data") {
   invisible(manifest)
 }
 
+######
+# function, organize_fluxnet_files(), which:
+#   Takes any manifest-like tibble with columns
+# – path (full file path)
+# – time_integral (e.g. "DD", "AUXMETEO", etc.)
+# – dataset (e.g. "L2", "FULLSET", etc.)
+# A base output directory
+# Reproduces exactly the same logic you had:
+#   Builds dest_dir = base / {time_integral}_{dataset}, or the base itself if either is NA
+# Creates all needed folders
+# Moves files, overwriting only when the source is strictly newer
+# use for AMF
+# organize_fluxnet_files(manifest = AMF_manifest_new, base_out = file.path("data", "FLUXNET", "AMF"))
+# use for ICOS
+# organize_fluxnet_files(manifest = icos_manifest_new,base_out = file.path("data", "FLUXNET", "ICOS"))
+# 
 
+######
+library(fs)
+library(dplyr)
+
+organize_fluxnet_files <- function(manifest, base_out) {
+  manifest2 <- manifest %>%
+    mutate(
+      dest_dir = case_when(
+        # AUXMETEO/AUXNEE → put them under base_out/AUXMETEO or AUXNEE
+        is.na(time_integral) & !is.na(dataset) ~ file.path(base_out, dataset),
+        # everything else → time_integral_dataset
+        !is.na(time_integral) & !is.na(dataset) ~
+          file.path(base_out, paste0(time_integral, "_", dataset)),
+        # fallback → just the base
+        TRUE ~ base_out
+      )
+    )
+  
+  # create folders
+  unique(manifest2$dest_dir) %>%
+    walk(~ dir.create(.x, recursive = TRUE, showWarnings = FALSE))
+  
+  # move with overwrite‐newer logic (as before)…
+  manifest2 %>%
+    rowwise() %>%
+    do({
+      src  <- .$path
+      dest <- file.path(.$dest_dir, basename(src))
+      dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
+      
+      if (src != dest) {
+        src_mtime <- file.info(src)$mtime
+        
+        should_move <- if (file.exists(dest)) {
+          dest_mtime <- file.info(dest)$mtime
+          src_mtime > dest_mtime
+        } else {
+          TRUE
+        }
+        
+        if (should_move) {
+          file.copy(src, dest, overwrite = TRUE)
+          file.remove(src)
+        }
+      }
+      tibble()
+    }) %>% invisible()
+  
+  message("All files have been reorganized under ", base_out)
+  invisible(manifest2)
+}
 
 #######
 #######
+# Filter manifest
+
+filter_manifest <- function(manifest,
+                            data_center   = NULL,
+                            data_product  = NULL,
+                            dataset       = NULL,
+                            time_integral = NULL,
+                            site          = NULL) {
+  manifest %>%
+    { if (!is.null(data_center))   filter(., data_center   %in% data_center)   else . } %>%
+    { if (!is.null(data_product))  filter(., data_product  %in% data_product)  else . } %>%
+    { if (!is.null(dataset))       filter(., dataset       %in% dataset)       else . } %>%
+    { if (!is.null(time_integral)) filter(., time_integral %in% time_integral) else . } %>%
+    { if (!is.null(site))          filter(., site          %in% site)          else . }
+}
+
+# general load_fluxnet_data function
+# Load & cache with manifest
+# 
+# USAGE -Load all AmeriFlux Annual data:
+# Annual_allAMF <- load_fluxnet_data(all_manifest,
+#                                cache_file = "cache/annual_allAMF.rds",
+#                                filters = list(data_center="AMF",
+#                                               time_integral="YY"))
+
+# USAGE Load only ICOS hourly for a handful of sites:
+#   hourly_icos <- load_fluxnet_data(all_manifest,
+#                                    cache_file = "cache/icos_hh.rds",
+#                                    filters = list(data_center="FLX",
+#                                                   time_integral="HH",
+#                                                   site = c("AR-SLu","AT-Neu")))
+
+
+
+library(purrr)
+library(readr)
+
+load_fluxnet_data <- function(manifest,
+                              cache_file,
+                              filters = list(data_center=NULL,
+                                             data_product=NULL,
+                                             dataset=NULL,
+                                             time_integral=NULL,
+                                             site=NULL)) {
+  # 3.1 apply filters
+  mf <- filter_manifest(manifest,
+                        data_center   = filters$data_center,
+                        data_product  = filters$data_product,
+                        dataset       = filters$dataset,
+                        time_integral = filters$time_integral,
+                        site          = filters$site)
+  paths <- mf$path
+  
+  # 3.2 read or init cache
+  if (file.exists(cache_file)) {
+    data <- readRDS(cache_file)
+    seen <- unique(data$path)
+    new_paths <- setdiff(paths, seen)
+  } else {
+    data <- tibble()
+    new_paths <- paths
+  }
+  
+  # 3.3 read any new files
+  if (length(new_paths) > 0) {
+    new_data <- map_df(new_paths, function(p) {
+      read_csv(p) %>%
+        mutate(path = p, .before=1) %>%
+        # bring in all manifest cols for that file:
+        left_join(select(mf, path, data_center, data_product, dataset, time_integral, start_year, end_year, site),
+                  by = "path")
+    })
+    data <- bind_rows(data, new_data)
+    saveRDS(data, cache_file)
+  }
+  
+  data
+}
+
 
 
 extract_site <- function(path) {
@@ -213,32 +486,16 @@ load_and_cache <- function(patterns, cache_file, extract_site_func) {
   return(data)
 }
 
+
+#simple clean fluxnet data function
 clean_fluxnet_data <- function(data, site_metadata) {
-  # 1) Identify numeric columns for sentinel cleaning
-  numeric_cols <- names(dplyr::select(data, where(is.numeric)))
-  
-  # 2) Drop metadata columns *other* than SITE_ID, and never drop 'site'
-  cols_to_drop <- setdiff(
-    names(site_metadata),          # all metadata names
-    c("SITE_ID", "site")           # keep these two
-  )
-  
   data %>%
-    # (1) sentinel conversion
-    mutate(across(all_of(numeric_cols), ~ ifelse(. < -9000, NA, .))) %>%
-    # (2) drop unwanted metadata cols but keep data$site
-    select(-any_of(cols_to_drop)) %>%
-    # (3) join
-    left_join(site_metadata, by = c("site" = "SITE_ID")) %>%
-    # (4) drop the replicated metadata's "site" column
-    select(-site.y)
+    # 1) replace sentinels in all numeric columns
+    mutate(across(where(is.numeric), ~ if_else(.x < -9000, NA_real_, .x))) %>%
+    # 2) join your metadata by site
+    left_join(site_metadata, by = c("site" = "SITE_ID"))
 }
 
-
-add_site_metadata <- function(data, metadata) {
-  data %>% dplyr::select(-any_of(names(metadata))) %>%
-    left_join(metadata, by = c("site" = "SITE_ID"))
-}
 
 # ------------------------
 # Metadata Loading Function
