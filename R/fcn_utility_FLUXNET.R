@@ -380,74 +380,84 @@ organize_fluxnet_files <- function(manifest, base_out) {
 #######
 # Filter manifest
 
+# ----------------------------------------------------------------------------
+# Manifest filtering (no name collisions)
+# ----------------------------------------------------------------------------
 filter_manifest <- function(manifest,
-                            data_center   = NULL,
-                            data_product  = NULL,
-                            dataset       = NULL,
-                            time_integral = NULL,
-                            site          = NULL) {
-  manifest %>%
-    { if (!is.null(data_center))   filter(., data_center   %in% data_center)   else . } %>%
-    { if (!is.null(data_product))  filter(., data_product  %in% data_product)  else . } %>%
-    { if (!is.null(dataset))       filter(., dataset       %in% dataset)       else . } %>%
-    { if (!is.null(time_integral)) filter(., time_integral %in% time_integral) else . } %>%
-    { if (!is.null(site))          filter(., site          %in% site)          else . }
+                            data_center    = NULL,
+                            flux_product   = NULL,
+                            dataset_type   = NULL,
+                            time_integrals = NULL,
+                            sites          = NULL) {
+  mf <- manifest
+  if (!is.null(data_center))    mf <- filter(mf, .data$data_center   %in% data_center)
+  if (!is.null(flux_product))   mf <- filter(mf, .data$data_product   %in% flux_product)
+  if (!is.null(dataset_type))   mf <- filter(mf, .data$dataset        %in% dataset_type)
+  if (!is.null(time_integrals)) mf <- filter(mf, .data$time_integral  %in% time_integrals)
+  if (!is.null(sites))          mf <- filter(mf, .data$site           %in% sites)
+  mf
 }
 
 # general load_fluxnet_data function
 # Load & cache with manifest
 # 
 # USAGE -Load all AmeriFlux Annual data:
-# Annual_allAMF <- load_fluxnet_data(all_manifest,
-#                                cache_file = "cache/annual_allAMF.rds",
-#                                filters = list(data_center="AMF",
-#                                               time_integral="YY"))
-
-# USAGE Load only ICOS hourly for a handful of sites:
-#   hourly_icos <- load_fluxnet_data(all_manifest,
-#                                    cache_file = "cache/icos_hh.rds",
-#                                    filters = list(data_center="FLX",
-#                                                   time_integral="HH",
-#                                                   site = c("AR-SLu","AT-Neu")))
+# 1) Load & cache all AMF FULLSET annual data:
+# Annual_allAMF_FULLSET <- load_fluxnet_data2(
+#   manifest      = all_manifest,
+#   cache_file    = "cache/annual_allAMF_FULLSET.rds",
+#   data_center   = "AMF",
+#   dataset_type  = "FULLSET",
+#   time_integrals= "YY"
+# )
 
 
-
-library(purrr)
-library(readr)
-
+# ----------------------------------------------------------------------------
+# Loader + cache
+# ----------------------------------------------------------------------------
 load_fluxnet_data <- function(manifest,
                               cache_file,
-                              filters = list(data_center=NULL,
-                                             data_product=NULL,
-                                             dataset=NULL,
-                                             time_integral=NULL,
-                                             site=NULL)) {
-  # 3.1 apply filters
+                              data_center    = NULL,
+                              flux_product   = NULL,
+                              dataset_type   = NULL,
+                              time_integrals = NULL,
+                              sites          = NULL) {
+  
+  # 1) Subset manifest
   mf <- filter_manifest(manifest,
-                        data_center   = filters$data_center,
-                        data_product  = filters$data_product,
-                        dataset       = filters$dataset,
-                        time_integral = filters$time_integral,
-                        site          = filters$site)
+                        data_center    = data_center,
+                        flux_product   = flux_product,
+                        dataset_type   = dataset_type,
+                        time_integrals = time_integrals,
+                        sites          = sites)
+  
+  # 2) Sanity check
+  message(
+    "→ Will read ", nrow(mf), " files with integrals: ",
+    paste(unique(mf$time_integral), collapse = ", "),
+    "  (sites: ", if (is.null(sites)) "ALL" else paste(sites, collapse=","), ")"
+  )
+  
   paths <- mf$path
   
-  # 3.2 read or init cache
+  # 3) Read or initialize cache
   if (file.exists(cache_file)) {
-    data <- readRDS(cache_file)
-    seen <- unique(data$path)
-    new_paths <- setdiff(paths, seen)
+    data       <- readRDS(cache_file)
+    seen_paths <- unique(data$path)
+    new_paths  <- setdiff(paths, seen_paths)
   } else {
-    data <- tibble()
+    data      <- tibble()
     new_paths <- paths
   }
   
-  # 3.3 read any new files
+  # 4) Read any new files, join manifest cols, and update cache
   if (length(new_paths) > 0) {
     new_data <- map_df(new_paths, function(p) {
-      read_csv(p) %>%
-        mutate(path = p, .before=1) %>%
-        # bring in all manifest cols for that file:
-        left_join(select(mf, path, data_center, data_product, dataset, time_integral, start_year, end_year, site),
+      read_csv(p, show_col_types = FALSE) %>%
+        mutate(path = p, .before = 1) %>%
+        left_join(select(mf, path, data_center, data_product,
+                         dataset, time_integral, start_year,
+                         end_year, site),
                   by = "path")
     })
     data <- bind_rows(data, new_data)
@@ -456,36 +466,6 @@ load_fluxnet_data <- function(manifest,
   
   data
 }
-
-
-
-extract_site <- function(path) {
-  str_split(basename(path), "_", simplify = TRUE)[, 2]
-}
-
-load_and_cache <- function(patterns, cache_file, extract_site_func) {
-  paths <- dir_ls(".", regexp = paste(patterns, collapse = "|"), recurse = TRUE)
-  paths <- paths[!grepl("VARINFO", basename(paths))]
-  
-  if (file.exists(cache_file)) {
-    data <- readRDS(cache_file)
-    new_paths <- paths[!extract_site_func(paths) %in% unique(data$site)]
-    if (length(new_paths) > 0) {
-      new_data <- map_df(new_paths, ~ read_csv(.x) %>%
-                           mutate(file = basename(.x), .before = 1) %>%
-                           mutate(site = extract_site_func(.x)))
-      data <- bind_rows(data, new_data)
-      saveRDS(data, cache_file)
-    }
-  } else {
-    data <- map_df(paths, ~ read_csv(.x) %>%
-                     mutate(file = basename(.x), .before = 1) %>%
-                     mutate(site = extract_site_func(.x)))
-    saveRDS(data, cache_file)
-  }
-  return(data)
-}
-
 
 #simple clean fluxnet data function
 clean_fluxnet_data <- function(data, site_metadata) {
