@@ -27,13 +27,30 @@ icos_manifest2 %>%
   do({
     src  <- .$path
     dest <- file.path(.$dest_dir, basename(src))
-    # ensure parent dir exists just before moving
     dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
-    # move with base R; skip if already in place
-    if (src != dest && !file.exists(dest)) {
-      file.rename(src, dest)
+    
+    if (src != dest) {
+      # always fetch the source mtime
+      src_mtime <- file.info(src)$mtime
+      
+      # decide if we should move
+      should_move <- if (file.exists(dest)) {
+        # dest exists → only move if source is strictly newer
+        dest_mtime <- file.info(dest)$mtime
+        src_mtime > dest_mtime
+      } else {
+        # dest does not exist → definitely move
+        TRUE
+      }
+      
+      if (should_move) {
+        # copy & overwrite (or initial move), then delete original
+        file.copy(src, dest, overwrite = TRUE)
+        file.remove(src)
+      }
     }
-    tibble()  # keep rowwise happy
+    
+    tibble()  # dummy return
   })
 
 cat("All ICOS downloads are now under", base_out, "\n")
@@ -74,11 +91,23 @@ amf_manifest2 %>%
     # ensure parent dir exists
     dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
     # move only if not already in place
-    if (src != dest && !file.exists(dest)) {
-      file.rename(src, dest)
+    # get file info
+    src_info  <- file.info(src)
+    dest_info <- file.info(dest)
+    
+    # decide whether to move/overwrite
+    if (src != dest) {
+      if (!file.exists(dest) || src_info$mtime > dest_info$mtime) {
+        # copy over, overwriting if it’s already there
+        file.copy(src, dest, overwrite = TRUE)
+        # then delete the original
+        file.remove(src)
+      }
+      # otherwise do nothing (dest is up‐to‐date or newer)
     }
+    
     tibble()  # dummy return to satisfy rowwise
   })
 
-cat("All AMF FLUXNET2015 files have been moved under", base_out_amf, "\n")
+cat("All AMF FLUXNET files have been moved under", base_out_amf, "\n")
 
