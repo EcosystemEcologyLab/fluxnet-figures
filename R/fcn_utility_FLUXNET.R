@@ -416,56 +416,96 @@ filter_manifest <- function(manifest,
 # Loader + cache
 # ----------------------------------------------------------------------------
 load_fluxnet_data <- function(manifest,
-                              cache_file,
+                              cache_file     = NULL,
                               data_center    = NULL,
                               flux_product   = NULL,
                               dataset_type   = NULL,
                               time_integrals = NULL,
-                              sites          = NULL) {
-  
-  # 1) Subset manifest
-  mf <- filter_manifest(manifest,
-                        data_center    = data_center,
-                        flux_product   = flux_product,
-                        dataset_type   = dataset_type,
-                        time_integrals = time_integrals,
-                        sites          = sites)
-  
-  # 2) Sanity check
-  message(
-    "→ Will read ", nrow(mf), " files with integrals: ",
-    paste(unique(mf$time_integral), collapse = ", "),
-    "  (sites: ", if (is.null(sites)) "ALL" else paste(sites, collapse=","), ")"
+                              sites          = NULL,
+                              reader         = readr::read_csv,
+                              reader_args    = list(show_col_types = FALSE)) {
+  # Subset the manifest based on the filters provided
+  mf <- filter_manifest(
+    manifest,
+    data_center    = data_center,
+    flux_product   = flux_product,
+    dataset_type   = dataset_type,
+    time_integrals = time_integrals,
+    sites          = sites
   )
+  
+  message(
+    "→ Will read ", nrow(mf), " file(s) with integrals: ",
+    paste(unique(mf$time_integral), collapse = ", "),
+    "  (sites: ", if (is.null(sites)) "ALL" else paste(sites, collapse = ","), ")"
+  )
+  
+  # If nothing to read, return an empty tibble with a helpful shape
+  if (nrow(mf) == 0) {
+    return(tibble::tibble())
+  }
   
   paths <- mf$path
   
-  # 3) Read or initialize cache
+  # --------
+  # NO CACHE MODE: cache_file is NULL → read everything and return
+  # --------
+  if (is.null(cache_file)) {
+    out <- purrr::map_dfr(paths, function(p) {
+      do.call(reader, c(list(file = p), reader_args)) |>
+        dplyr::mutate(path = p, .before = 1)
+    }) |>
+      dplyr::left_join(
+        dplyr::select(
+          mf, path, data_center, data_product, dataset, time_integral,
+          start_year, end_year, site
+        ),
+        by = "path"
+      )
+    
+    return(out)
+  }
+  
+  # --------
+  # CACHE MODE: incremental read + saveRDS
+  # --------
+  # Ensure the cache directory exists
+  cache_dir <- dirname(cache_file)
+  if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
+  
+  # Load existing cache or start fresh
   if (file.exists(cache_file)) {
-    data       <- readRDS(cache_file)
-    seen_paths <- unique(data$path)
-    new_paths  <- setdiff(paths, seen_paths)
+    data      <- readRDS(cache_file)
+    seen      <- unique(data$path)
+    new_paths <- setdiff(paths, seen)
   } else {
-    data      <- tibble()
+    data      <- tibble::tibble()
     new_paths <- paths
   }
   
-  # 4) Read any new files, join manifest cols, and update cache
+  # Read any new files and append to cache
   if (length(new_paths) > 0) {
-    new_data <- map_df(new_paths, function(p) {
-      read_csv(p, show_col_types = FALSE) %>%
-        mutate(path = p, .before = 1) %>%
-        left_join(select(mf, path, data_center, data_product,
-                         dataset, time_integral, start_year,
-                         end_year, site),
-                  by = "path")
+    message("Reading ", length(new_paths), " new file(s) …")
+    new_data <- purrr::map_dfr(new_paths, function(p) {
+      do.call(reader, c(list(file = p), reader_args)) |>
+        dplyr::mutate(path = p, .before = 1) |>
+        dplyr::left_join(
+          dplyr::select(
+            mf, path, data_center, data_product, dataset, time_integral,
+            start_year, end_year, site
+          ),
+          by = "path"
+        )
     })
-    data <- bind_rows(data, new_data)
+    data <- dplyr::bind_rows(data, new_data)
     saveRDS(data, cache_file)
   }
   
-  data
+  # Return only the rows that correspond to the current manifest subset
+  data |>
+    dplyr::semi_join(dplyr::select(mf, path), by = "path")
 }
+
 
 #simple clean fluxnet data function
 clean_fluxnet_data <- function(data, site_metadata) {
