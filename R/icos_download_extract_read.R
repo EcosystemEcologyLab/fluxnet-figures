@@ -1,6 +1,11 @@
+#### NOTE: I hate to have parallel code rather than fixing the functions you've 
+# already written, but I can't seem to figure out where ICOS files that start 
+# with "FLX" came from
+
 library(httr2)
 #' Download full zip of ICOS data from https://www.icos-cp.eu/data-products/ecosystem-release
 #' 
+#' @author Eric R. Scott
 #' @param dir where to download this big zip file
 icos_download <- function(dir = "data") {
   cli::cli_inform(c(
@@ -47,6 +52,8 @@ icos_download <- function(dir = "data") {
 #' NOTE: for now this only extracts zip files with "ARCHIVE" in the filename and
 #' from that only CSVs with "FLUXNET" (but not "VARINFO_FLUXNET") or "SITEINFO"
 #' in the name.
+#' 
+#' @author Eric R. Scott
 #'
 #' @param zip the big 10GB zip file created by `icos_download()`
 #' @param outdir where to put individual site zip files
@@ -115,6 +122,8 @@ icos_extract <- function(
 }
 
 #' Read in ICOS FLUXNET CSVs after extracting
+#' 
+#' @author Eric R. Scott
 #'
 #' @param dir directory to look for CSVs in.  Will look recursively, so folders
 #'   nested under this are OK.
