@@ -1,6 +1,7 @@
 library(httr2)
 #' Download full zip of ICOS data from https://www.icos-cp.eu/data-products/ecosystem-release
-#'
+#' 
+#' @param dir where to download this big zip file
 icos_download <- function(dir = "data") {
   cli::cli_inform(c(
     "!" = "You are required to accept the license agreement to download:",
@@ -43,14 +44,17 @@ icos_download <- function(dir = "data") {
 #' Happens in two stages: 1) extract specificed (or all) site zip files from
 #' giant 10GB zip file, 2) extract specific files from site zip files.
 #'
-#' NOTE: for now this only extracts CSVs with "<site_id>_FLUXNET_" in the name.
+#' NOTE: for now this only extracts zip files with "ARCHIVE" in the filename and
+#' from that only CSVs with "FLUXNET" (but not "VARINFO_FLUXNET") or "SITEINFO"
+#' in the name.
 #'
 #' @param zip the big 10GB zip file created by `icos_download()`
 #' @param outdir where to put individual site zip files
 #' @param site_ids an optional vector of site IDs to extract. `site_ids` are a
 #'   2-letter country code and a 3-letter site code.  If `NULL` (default), all
 #'   site zip files will be extracted.
-#' @param period which FLUXNET CSVs to extract
+#' @param period which FLUXNET CSVs to extract. Multiple choices allowed.
+#' 
 icos_extract <- function(
   zip,
   outdir = "data/ICOS",
@@ -112,11 +116,13 @@ icos_extract <- function(
 
 #' Read in ICOS FLUXNET CSVs after extracting
 #'
-#' @param dir directory to look for CSVs in.  Will look recursively, so folders nested under this are OK.
+#' @param dir directory to look for CSVs in.  Will look recursively, so folders
+#'   nested under this are OK.
 #' @param site_id an optional vector of site IDs to read in. `site_ids` are a
 #'   2-letter country code and a 3-letter site code.  If `NULL` (default), all
 #'   sites found will be used.
 #' @param period choose which period to read in. Only one choice is allowed
+#' 
 icos_read_fluxnet <- function(
   dir = "data/ICOS",
   period = c("YY", "MM", "WW", "DD", "HH"),
