@@ -2,6 +2,6 @@
 
 To produce standardized figures for the FLUXNET data
 
-See current report here: [https://ecosystemecologylab.github.io/fluxnet-figures/](https://ecosystemecologylab.github.io/fluxnet-figures/)
+Figures for North America Ecosystem Ecology paper: [https://ecosystemecologylab.github.io/fluxnet-figures/](https://ecosystemecologylab.github.io/fluxnet-figures/)
 
-Code from the Quarto report is extracted as a separate R script by running `knitr::purl("plot_fluxnet.qmd", documentation = 2)`. 
+Code from the Quarto report can be extracted as a separate R script by running `knitr::purl("plot_fluxnet.qmd", documentation = 2)`. 
