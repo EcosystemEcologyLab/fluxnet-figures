@@ -17,6 +17,12 @@ source("R/fcn_utility_FLUXNET.R")
 
 ```{r}
 metadata <- load_fluxnet_metadata()
-amf_files <- discover_AMF_files()
+amf_files <- discover_AMF_files(data_dir = "data/AMF")
 icos_files <- discover_ICOS_files(data_dir = "data/ICOS")
+manifest <- bind_rows(amf_files, icos_files)
+annual <- manifest %>%
+  filter(time_integral == "YY") %>%
+  load_fluxnet_data() %>%
+  mutate(across(where(is.numeric), \(x) na_if(x, -9999))) %>%
+  mutate(year = as.integer(TIMESTAMP), .before = TIMESTAMP)
 ```
