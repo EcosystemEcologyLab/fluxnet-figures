@@ -1,5 +1,5 @@
 ---
-title: "Initial FLUXNET Plots"
+title: "Potential Figures for North American Ecosystem Ecology Paper"
 author: 
   - Kristina Riemer
   - Dave Moore
@@ -20,7 +20,6 @@ execute:
 ## TODO list
 
 - Data
-  - Download data for more sites
   - Automated checking of data ranges? 
 - Plots
   - Scale by number of years for each date
@@ -157,7 +156,6 @@ walk(
 ```
 
 ## Read in data
-
 
 ```{r}
 #| label: load-data
