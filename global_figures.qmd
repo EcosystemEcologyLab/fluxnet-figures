@@ -1,0 +1,22 @@
+---
+title: "Global Fluxnet"
+authors:
+    - name: Eric R. Scott
+        orcid: 0000-0002-7430-7879
+format: html
+---
+
+
+```{r}
+#| label: setup
+
+source("R/fcn_utility_FLUXNET.R")
+```
+
+
+
+```{r}
+metadata <- load_fluxnet_metadata()
+amf_files <- discover_AMF_files()
+icos_files <- discover_ICOS_files(data_dir = "data/ICOS")
+```
