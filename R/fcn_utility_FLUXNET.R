@@ -529,7 +529,7 @@ load_fluxnet_metadata <- function() {
     mutate(DATA_SOURCE = "AmeriFlux")
   
   icos_files <- fs::dir_ls(path = "data", regexp = "ICOSETC_.*_SITEINFO_L2\\.csv$", recurse = TRUE)
-  
+
   icos_meta <- map_dfr(icos_files, function(path) {
     read_csv(path, col_types = cols(SITE_ID = col_character(), GROUP_ID = col_character(),
                                     VARIABLE = col_character(), DATAVALUE = col_character())) %>%
@@ -547,6 +547,7 @@ load_fluxnet_metadata <- function() {
     transmute(
       SITE_ID,
       SITE_NAME,
+      COUNTRY,
       STATE = NA_character_,
       COUNTRY,
       IGBP,
