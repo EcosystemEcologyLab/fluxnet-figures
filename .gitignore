@@ -8,3 +8,4 @@ data/*
 plot_fluxnet.html
 plot_fluxnet_files/
 rsconnect/
+.vscode/settings.json
