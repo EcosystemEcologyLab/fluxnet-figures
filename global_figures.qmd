@@ -9,11 +9,15 @@ format: html
 
 ```{r}
 #| label: setup
-
+library(dplyr)
+library(ggplot2)
+library(sf)
+library(colorspace)
 source("R/fcn_utility_FLUXNET.R")
+
 ```
 
-
+## Load Data
 
 ```{r}
 metadata <- load_fluxnet_metadata()
@@ -24,5 +28,50 @@ annual <- manifest %>%
   filter(time_integral == "YY") %>%
   load_fluxnet_data() %>%
   mutate(across(where(is.numeric), \(x) na_if(x, -9999))) %>%
-  mutate(year = as.integer(TIMESTAMP), .before = TIMESTAMP)
+  mutate(year = as.integer(TIMESTAMP), .before = TIMESTAMP) %>%
+  left_join(metadata %>% select(-SITEID, -SITE_ID), by = join_by(site))
+```
+
+::: {.callout-important}
+
+I'm not sure if this is correct, but these are the [variables](https://fluxnet.org/data/fluxnet2015-dataset/fullset-data-product/) I'm using for fluxes:
+
+- GPP: `GPP_NT_VUT_MEAN` ± `GPP_NT_VUT_SE` (units: gC m-2 y-1)
+- NEE: `NEE_VUT_MEAN` ± `NEE_VUT_SE` (units: gC m-2 y-1	)
+- RECO: `RECO_NT_VUT_MEAN` ± `RECO_NT_VUT_SE` (units: gC m-2 y-1)
+- ET: ???
+
+:::
+
+TODO: Not sure where the QC variables are, but those would be nice to have
+
+## Normals period
+
+I think the plan is to eventually calculate monthly normals and anomalies.  Still need to decide on the normals period.  I guess we'll go with 1981--2010 arbitrarily for now.  Also, this is using annual data, not monthly, so "normals" is just a mean of that period at each site I guess?
+
+```{r}
+annual$year %>% range()
+annual_normals <- annual %>%
+  group_by(site) %>%
+  filter(year %in% 1981:2020) %>%
+  summarize(GPP_NT_VUT_MEAN = mean(GPP_NT_VUT_MEAN, na.rm = TRUE)) %>%
+  #some sites apparently have no data in this range
+  filter(is.finite(GPP_NT_VUT_MEAN)) %>%
+  #join in lat lon
+  left_join(metadata %>% select(site, LOCATION_LAT, LOCATION_LONG))
+```
+
+Plot of annual normals
+
+```{r}
+annual_normals_sf <- sf::st_as_sf(
+  annual_normals,
+  coords = c("LOCATION_LONG", "LOCATION_LAT")
+)
+
+ggplot(annual_normals_sf) +
+  geom_sf(aes(color = GPP_NT_VUT_MEAN)) +
+  #   scale_color_continuous_diverging() +
+  scale_color_binned_diverging() +
+  coord_sf()
 ```
