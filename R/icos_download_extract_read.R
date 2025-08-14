@@ -1,6 +1,6 @@
 #### NOTE: I hate to have parallel code rather than fixing the functions you've 
 # already written, but I can't seem to figure out where ICOS files that start 
-# with "FLX" came from
+# with "FLX" came from (https://github.com/EcosystemEcologyLab/fluxnet-figures/issues/19)
 
 library(httr2)
 #' Download full zip of ICOS data from https://www.icos-cp.eu/data-products/ecosystem-release
