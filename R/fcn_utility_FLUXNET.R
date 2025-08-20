@@ -254,6 +254,8 @@ discover_ICOS_files <- function(data_dir = "data") {
       remove  = FALSE,
       convert = TRUE
     ) %>%
+    mutate(across(everything(), as.character)) %>% 
+    mutate(across(ends_with("year"), as.integer)) %>% 
     select(path, filename, data_center, site, data_product,
            dataset, time_integral,
            start_year, end_year)
@@ -277,6 +279,8 @@ discover_ICOS_files <- function(data_dir = "data") {
       start_year = NA_integer_,
       end_year   = NA_integer_
     ) %>%
+    mutate(across(everything(), as.character)) %>% 
+    mutate(across(ends_with("year"), as.integer)) %>% 
     select(path, filename, data_center, site, data_product,
            dataset, time_integral,
            start_year, end_year)
