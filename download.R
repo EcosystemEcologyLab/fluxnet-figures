@@ -6,7 +6,7 @@ icos_download()
 icos_extract(
   zip = "data/Ecosystem final quality (L2) product in ETC-Archive format - release 2025-1.zip",
   outdir = "data/ICOS",
-  period = c("YY", "DD")
+  period = c("YY", "MM", "DD")
 )
 
 # fluxnet (including legacy ICOS?)
@@ -58,11 +58,12 @@ zip_paths <- amf_download_fluxnet(
   out_dir = "data/AMF"
 )
 
+zip_paths <- fs::dir_ls("data/AMF", glob = "*.zip")
 # Only unzip files needed
 walk(
   zip_paths,
   \(zip_path) {
-    t <- c("DD", "YY") #which FULLSET CSVs to extract
+    t <- c("DD", "MM", "YY") #which FULLSET CSVs to extract
     exdir <- fs::path_ext_remove(zip_path)
     #split apart the file name and insert `t` in the right place
     file_vect <- zip_path |>
