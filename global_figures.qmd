@@ -89,7 +89,7 @@ vars_of_interest <- c(
 
 :::
 
-TODO: Not sure where the QC variables are, but those would be nice to have
+TODO: Not sure where the QC variables are, but those would be nice to have.  I think we want to remove all the (poorly) gap-filled data.
 
 ## Maps to compare "historical" with "recent"
 
@@ -215,7 +215,7 @@ E.g. one site:
 ```{r}
 #| fig-height: 5
 monthly %>%
-  filter(site == last(site)) %>%
+  filter(site == "US-Ha1") %>%
   ggplot(aes(x = yearmonth, y = GPP_NT_VUT_MEAN)) +
   geom_line()
 ```
@@ -238,7 +238,7 @@ E.g. one site:
 ```{r}
 #| fig-height: 5
 anomalies %>%
-  filter(site == last(site), !is.na(GPP_NT_VUT_MEAN)) %>%
+  filter(site == "US-Ha1", !is.na(GPP_NT_VUT_MEAN)) %>%
   ggplot(aes(x = yearmonth, y = GPP_NT_VUT_MEAN)) +
-  geom_line(aes(color = GPP_NT_VUT_MEAN > 0, group = 1))
+  geom_line(aes(color = GPP_NT_VUT_MEAN > 0, group = 1)) #TODO: find better way to color anomalies
 ```
