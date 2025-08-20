@@ -1,10 +1,10 @@
-#### NOTE: I hate to have parallel code rather than fixing the functions you've 
-# already written, but I can't seem to figure out where ICOS files that start 
+#### NOTE: I hate to have parallel code rather than fixing the functions you've
+# already written, but I can't seem to figure out where ICOS files that start
 # with "FLX" came from (https://github.com/EcosystemEcologyLab/fluxnet-figures/issues/19)
 
 library(httr2)
 #' Download full zip of ICOS data from https://www.icos-cp.eu/data-products/ecosystem-release
-#' 
+#'
 #' @author Eric R. Scott
 #' @param dir where to download this big zip file
 icos_download <- function(dir = "data") {
@@ -52,7 +52,7 @@ icos_download <- function(dir = "data") {
 #' NOTE: for now this only extracts zip files with "ARCHIVE" in the filename and
 #' from that only CSVs with "FLUXNET" (but not "VARINFO_FLUXNET") or "SITEINFO"
 #' in the name.
-#' 
+#'
 #' @author Eric R. Scott
 #'
 #' @param zip the big 10GB zip file created by `icos_download()`
@@ -61,7 +61,7 @@ icos_download <- function(dir = "data") {
 #'   2-letter country code and a 3-letter site code.  If `NULL` (default), all
 #'   site zip files will be extracted.
 #' @param period which FLUXNET CSVs to extract. Multiple choices allowed.
-#' 
+#'
 icos_extract <- function(
   zip,
   outdir = "data/ICOS",
@@ -121,82 +121,82 @@ icos_extract <- function(
   })
 }
 
-#' Read in ICOS FLUXNET CSVs after extracting
-#' 
-#' @author Eric R. Scott
-#'
-#' @param dir directory to look for CSVs in.  Will look recursively, so folders
-#'   nested under this are OK.
-#' @param site_id an optional vector of site IDs to read in. `site_ids` are a
-#'   2-letter country code and a 3-letter site code.  If `NULL` (default), all
-#'   sites found will be used.
-#' @param period choose which period to read in. Only one choice is allowed
-#' 
-icos_read_fluxnet <- function(
-  dir = "data/ICOS",
-  period = c("YY", "MM", "WW", "DD", "HH"),
-  site_ids = NULL,
-  manifest = NULL #TODO: optionally provide manifest with a "filepath" column?
-) {
-  sel_period = match.arg(period)
-  all_csvs <- fs::dir_ls(dir, recurse = TRUE, glob = "*.csv")
+# #' Read in ICOS FLUXNET CSVs after extracting
+# #'
+# #' @author Eric R. Scott
+# #'
+# #' @param dir directory to look for CSVs in.  Will look recursively, so folders
+# #'   nested under this are OK.
+# #' @param site_id an optional vector of site IDs to read in. `site_ids` are a
+# #'   2-letter country code and a 3-letter site code.  If `NULL` (default), all
+# #'   sites found will be used.
+# #' @param period choose which period to read in. Only one choice is allowed
+# #'
+# icos_read_fluxnet <- function(
+#   dir = "data/ICOS",
+#   period = c("YY", "MM", "WW", "DD", "HH"),
+#   site_ids = NULL,
+#   manifest = NULL #TODO: optionally provide manifest with a "filepath" column?
+# ) {
+#   sel_period = match.arg(period)
+#   all_csvs <- fs::dir_ls(dir, recurse = TRUE, glob = "*.csv")
 
-  icos_csvs <- dplyr::tibble(path = all_csvs) |>
-    dplyr::mutate(file = fs::path_file(path)) |>
-    #just in case dir is polluted with other CSVs
-    filter(str_detect(file, "^ICOSETC")) |>
-    filter(str_detect(file, "(?<!VARINFO)_FLUXNET_")) |>
-    tidyr::separate_wider_delim(
-      cols = file,
-      delim = "_",
-      names = c("ICOSETC", "site_id", "FLUXNET", "period", "L2.csv")
-    ) |>
-    select(-ICOSETC, -FLUXNET, -L2.csv) |>
-    filter(period %in% sel_period)
+#   icos_csvs <- dplyr::tibble(path = all_csvs) |>
+#     dplyr::mutate(file = fs::path_file(path)) |>
+#     #just in case dir is polluted with other CSVs
+#     filter(str_detect(file, "^ICOSETC")) |>
+#     filter(str_detect(file, "(?<!VARINFO)_FLUXNET_")) |>
+#     tidyr::separate_wider_delim(
+#       cols = file,
+#       delim = "_",
+#       names = c("ICOSETC", "site_id", "FLUXNET", "period", "L2.csv")
+#     ) |>
+#     select(-ICOSETC, -FLUXNET, -L2.csv) |>
+#     filter(period %in% sel_period)
 
-  if (!is.null(site_ids)) {
-    icos_csvs <- icos_csvs |> filter(site_id %in% site_ids)
-  }
+#   if (!is.null(site_ids)) {
+#     icos_csvs <- icos_csvs |> filter(site_id %in% site_ids)
+#   }
 
-  # Can't do this because they all have different column numbers
-  df <- purrr::map(icos_csvs$path, readr::read_csv) |>
-    purrr::set_names(icos_csvs$site_id) |>
-    purrr::list_rbind(names_to = "site_id")
+#   # Can't do this because they all have different column numbers
+#   df <- purrr::map(icos_csvs$path, readr::read_csv) |>
+#     purrr::set_names(icos_csvs$site_id) |>
+#     purrr::list_rbind(names_to = "site_id")
 
-  # basic data cleaning
-  df <- df |>
-    mutate(across(where(is.numeric), \(x) na_if(x, -9999)))
+#   # basic data cleaning
+#   df <- df |>
+#     mutate(across(where(is.numeric), \(x) na_if(x, -9999)))
 
-  if (period == "YY") {
-    df <- df |>
-      mutate(year = as.integer(TIMESTAMP), .before = TIMESTAMP)
-  }
+#   if (period == "YY") {
+#     df <- df |>
+#       mutate(year = as.integer(TIMESTAMP), .before = TIMESTAMP)
+#   }
 
-  if (period == "MM") {
-    df <- df |>
-      mutate(
-        yearmonth = tsibble::yearmonth(
-          as.character(TIMESTAMP),
-          format = "%Y%m"
-        ),
-        .before = TIMESTAMP
-      )
-  }
+#   if (period == "MM") {
+#     df <- df |>
+#       mutate(
+#         yearmonth = tsibble::yearmonth(
+#           as.character(TIMESTAMP),
+#           format = "%Y%m"
+#         ),
+#         .before = TIMESTAMP
+#       )
+#   }
 
-  if (period == "WW") {
-    df <- df |>
-      mutate(
-        date_start = lubridate::ymd(TIMESTAMP_START),
-        date_end = lubridate::ymd(TIMESTAMP_END),
-        .before = TIMESTAMP_START
-      )
-  }
+#   if (period == "WW") {
+#     df <- df |>
+#       mutate(
+#         date_start = lubridate::ymd(TIMESTAMP_START),
+#         date_end = lubridate::ymd(TIMESTAMP_END),
+#         .before = TIMESTAMP_START
+#       )
+#   }
 
-  if (period %in% c("DD")) {
-    df <- df |>
-      mutate(date = lubridate::ymd(TIMESTAMP), .before = TIMESTAMP)
-  }
+#   if (period %in% c("DD")) {
+#     df <- df |>
+#       mutate(date = lubridate::ymd(TIMESTAMP), .before = TIMESTAMP)
+#   }
 
-  # return:
-  df
-}
+#   # return:
+#   df
+# }
