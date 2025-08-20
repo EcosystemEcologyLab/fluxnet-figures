@@ -10,9 +10,13 @@ format: html
 ```{r}
 #| label: setup
 library(dplyr)
+library(purrr)
 library(ggplot2)
+library(ggtext)
+library(patchwork)
 library(sf)
 library(colorspace)
+library(rnaturalearth)
 source("R/fcn_utility_FLUXNET.R")
 
 ```
@@ -24,6 +28,19 @@ metadata <- load_fluxnet_metadata()
 amf_files <- discover_AMF_files(data_dir = "data/AMF")
 icos_files <- discover_ICOS_files(data_dir = "data/ICOS")
 manifest <- bind_rows(amf_files, icos_files)
+
+# deduplicate manifest?
+manifest <- manifest %>%
+  distinct(
+    site,
+    data_product,
+    dataset,
+    time_integral,
+    start_year,
+    end_year,
+    .keep_all = TRUE
+  )
+
 annual <- manifest %>%
   filter(time_integral == "YY") %>%
   load_fluxnet_data() %>%
@@ -41,37 +58,131 @@ I'm not sure if this is correct, but these are the [variables](https://fluxnet.o
 - RECO: `RECO_NT_VUT_MEAN` ± `RECO_NT_VUT_SE` (units: gC m-2 y-1)
 - ET: ???
 
+```{r}
+vars_of_interest <- c(
+  GPP = "GPP_NT_VUT_MEAN",
+  NEE = "NEE_VUT_MEAN",
+  RECO = "RECO_NT_VUT_MEAN"
+)
+```
+
 :::
 
 TODO: Not sure where the QC variables are, but those would be nice to have
 
-## Normals period
+## Compare "historical" with "recent"
 
-I think the plan is to eventually calculate monthly normals and anomalies.  Still need to decide on the normals period.  I guess we'll go with 1981--2010 arbitrarily for now.  Also, this is using annual data, not monthly, so "normals" is just a mean of that period at each site I guess?
+I don't know if there is an established time range for a "historical" period but I guess I'll go with 1981--2020 for now.
 
 ```{r}
 annual$year %>% range()
-annual_normals <- annual %>%
+annual_historic <- annual %>%
   group_by(site) %>%
   filter(year %in% 1981:2020) %>%
-  summarize(GPP_NT_VUT_MEAN = mean(GPP_NT_VUT_MEAN, na.rm = TRUE)) %>%
+  summarize(
+    across(any_of(matches(vars_of_interest)), \(x) mean(x, na.rm = TRUE))
+  ) %>%
   #some sites apparently have no data in this range
-  filter(is.finite(GPP_NT_VUT_MEAN)) %>%
+  filter(if_all(vars_of_interest, is.finite))
+
+annual_recent <- annual %>%
+  group_by(site) %>%
+  filter(year > 2020) %>%
+  summarize(across(any_of(matches(vars_of_interest)), \(x) {
+    mean(x, na.rm = TRUE)
+  })) %>%
+  filter(if_all(vars_of_interest, is.finite))
+
+#get a single dataset with historical, recent, and differences
+plot_df <- bind_rows(
+  annual_historic %>% mutate(period = "hist"),
+  annual_recent %>% mutate(period = "recent")
+) %>%
+  pivot_longer(c(-site, -period)) %>%
+  pivot_wider(names_from = "period", values_from = "value") %>%
+  mutate(diff = recent - hist) %>%
+  pivot_wider(names_from = name, values_from = c(hist, recent, diff)) %>%
   #join in lat lon
   left_join(metadata %>% select(site, LOCATION_LAT, LOCATION_LONG))
 ```
 
-Plot of annual normals
+
+
+
+Plot of historical data
 
 ```{r}
-annual_normals_sf <- sf::st_as_sf(
-  annual_normals,
+plot_df_sf <- sf::st_as_sf(
+  plot_df,
   coords = c("LOCATION_LONG", "LOCATION_LAT")
 )
+world <- ne_countries() %>%
+  st_set_crs("4326") %>%
+  filter(continent != "Antarctica")
 
-ggplot(annual_normals_sf) +
-  geom_sf(aes(color = GPP_NT_VUT_MEAN)) +
-  #   scale_color_continuous_diverging() +
-  scale_color_binned_diverging() +
-  coord_sf()
+#TODO different color palettes for different variables?
+p_hist <- map(glue::glue("hist_{vars_of_interest}"), \(var) {
+  lab <- str_extract(var, "GPP|NEE|RECO")
+  plot_df_sf %>%
+    filter(if_all(var, is.finite)) %>%
+    ggplot() +
+    geom_sf(data = world, fill = "white") +
+    geom_sf(aes(color = .data[[var]]), na.rm = TRUE) +
+    #   scale_color_continuous_diverging() +
+    scale_color_binned_diverging() +
+    coord_sf() +
+    labs(
+      subtitle = "1981-2020 mean",
+      color = glue::glue("{lab} gC m<sup>-2</sup> y<sup>-1</sup>")
+    ) +
+    theme_bw() +
+    theme(legend.title = element_markdown())
+})
+p_hist
+# wrap_plots(p_hist, ncol = 1)
+
+```
+
+
+```{r}
+p_recent <- map(glue::glue("recent_{vars_of_interest}"), \(var) {
+  lab <- str_extract(var, "GPP|NEE|RECO")
+  plot_df_sf %>%
+    filter(if_all(var, is.finite)) %>%
+    ggplot() +
+    geom_sf(data = world, fill = "white") +
+    geom_sf(aes(color = .data[[var]]), na.rm = TRUE) +
+    #   scale_color_continuous_diverging() +
+    scale_color_binned_diverging() +
+    coord_sf() +
+    labs(
+      subtitle = "> 2020 mean",
+      color = glue::glue("{lab} gC m<sup>-2</sup> y<sup>-1</sup>")
+    ) +
+    theme_bw() +
+    theme(legend.title = element_markdown())
+})
+p_recent
+```
+
+
+```{r}
+p_diff <- map(glue::glue("diff_{vars_of_interest}"), \(var) {
+  lab <- str_extract(var, "GPP|NEE|RECO")
+  plot_df_sf %>%
+    filter(if_all(var, is.finite)) %>%
+    ggplot() +
+    geom_sf(data = world, fill = "white") +
+    geom_sf(aes(color = .data[[var]]), na.rm = TRUE) +
+    #   scale_color_continuous_diverging() +
+    scale_color_binned_diverging() +
+    coord_sf() +
+    labs(
+      subtitle = "recent - historic",
+      color = glue::glue("{lab} gC m<sup>-2</sup> y<sup>-1</sup>")
+    ) +
+    theme_bw() +
+    theme(legend.title = element_markdown())
+})
+p_diff
 ```
