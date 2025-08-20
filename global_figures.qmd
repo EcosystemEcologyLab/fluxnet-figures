@@ -242,3 +242,91 @@ anomalies %>%
   ggplot(aes(x = yearmonth, y = GPP_NT_VUT_MEAN)) +
   geom_line(aes(color = GPP_NT_VUT_MEAN > 0, group = 1)) #TODO: find better way to color anomalies
 ```
+
+## Zonal timeseries
+
+With an arbitrary polygon (e.g. a country, a biome, etc.), extract and average (?) timeseries of all sites in the polygon
+
+
+```{r}
+# pick a polygon
+usa <- ne_countries(country = "United States of America")
+
+# figure out which sites are in the polygon
+metadata_sf <- metadata %>%
+  st_as_sf(coords = c("LOCATION_LONG", "LOCATION_LAT")) %>%
+  st_set_crs(st_crs(usa)) #arbitrary lat/lon CRS
+
+# subset of sites that are in the polygon
+sites_sub <- metadata_sf[st_intersects(usa, metadata_sf)[[1]], ] %>% pull(site)
+
+monthly_sub <- monthly %>%
+  filter(site %in% sites_sub)
+
+# get monthly means I guess?
+mean_monthly_sub <- monthly_sub %>%
+  group_by(yearmonth) %>%
+  summarize(across(
+    vars_of_interest,
+    .fns = list(mean = \(x) mean(x, na.rm = TRUE), sd = \(x) {
+      sd(x, na.rm = TRUE)
+    })
+  )) %>%
+  filter(if_all(starts_with(vars_of_interest), is.finite))
+
+ggplot(mean_monthly_sub, aes(x = yearmonth, y = GPP_NT_VUT_MEAN_mean)) +
+  geom_line() +
+  geom_ribbon(
+    aes(
+      ymin = GPP_NT_VUT_MEAN_mean - GPP_NT_VUT_MEAN_sd,
+      ymax = GPP_NT_VUT_MEAN_mean + GPP_NT_VUT_MEAN_sd
+    ),
+    alpha = 0.3
+  )
+
+# Or maybe we just want all the sites plotted as anomalies
+monthly_sub %>%
+  select(yearmonth, site, all_of(vars_of_interest)) %>%
+  mutate(month = month(yearmonth), .before = yearmonth) %>%
+  mutate(
+    across(all_of(vars_of_interest), \(x) x - mean(x, na.rm = TRUE)),
+    .by = c(site, month)
+  ) %>%
+  # filter(if_all(starts_with(vars_of_interest), is.finite)) %>%
+  filter(is.finite(GPP_NT_VUT_MEAN)) %>%
+  ggplot(aes(x = yearmonth, y = GPP_NT_VUT_MEAN, color = site)) +
+  geom_line(alpha = 0.3) +
+  theme(legend.position = "none")
+```
+
+That is not very nice looking.
+
+To plot anomalies for a geographical subset, would you first normalize then take the average or average and then normalize?  Probably the former?
+
+
+```{r}
+monthly_sub %>%
+  select(yearmonth, site, all_of(vars_of_interest)) %>%
+  mutate(month = month(yearmonth), .before = yearmonth) %>%
+  mutate(
+    across(all_of(vars_of_interest), \(x) x - mean(x, na.rm = TRUE)),
+    .by = c(site, month)
+  ) %>%
+  group_by(yearmonth) %>%
+  summarize(across(
+    vars_of_interest,
+    .fns = list(mean = \(x) mean(x, na.rm = TRUE), sd = \(x) {
+      sd(x, na.rm = TRUE)
+    })
+  )) %>%
+  filter(if_all(starts_with(vars_of_interest), is.finite)) %>%
+  ggplot(aes(x = yearmonth, y = GPP_NT_VUT_MEAN_mean)) +
+  geom_line() +
+  geom_ribbon(
+    aes(
+      ymin = GPP_NT_VUT_MEAN_mean - GPP_NT_VUT_MEAN_sd,
+      ymax = GPP_NT_VUT_MEAN_mean + GPP_NT_VUT_MEAN_sd
+    ),
+    alpha = 0.3
+  )
+```
