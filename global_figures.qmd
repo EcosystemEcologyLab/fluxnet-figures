@@ -209,29 +209,36 @@ wrap_plots(p_diff, ncol = 1)
 ```
 
 
-## Anomalies
+## Timeseries of anomalies
 
-
+E.g. one site:
 ```{r}
+#| fig-height: 5
 monthly %>%
   filter(site == last(site)) %>%
-  ggplot(aes(x = yearmonth, y = NEE_VUT_MEAN)) +
+  ggplot(aes(x = yearmonth, y = GPP_NT_VUT_MEAN)) +
   geom_line()
 ```
 
 Calculate anomalies as the difference at each yearmonth from the average for that month (at each site?)
 
 ```{r}
-monthly2 <- monthly %>%
+anomalies <-
+  monthly %>%
   select(yearmonth, site, all_of(vars_of_interest)) %>%
-  mutate(month = month(yearmonth), .before = yearmonth)
-
-monthly2 %>%
+  mutate(month = month(yearmonth), .before = yearmonth) %>%
   mutate(
-    across(vars_of_interest, \(x) x - mean(x, na.rm = TRUE)),
+    across(all_of(vars_of_interest), \(x) x - mean(x, na.rm = TRUE)),
     .by = c(site, month)
-  ) %>%
-  filter(site == last(site)) %>%
-  ggplot(aes(x = yearmonth, y = NEE_VUT_MEAN)) +
-  geom_line()
+  )
+```
+
+E.g. one site:
+
+```{r}
+#| fig-height: 5
+anomalies %>%
+  filter(site == last(site), !is.na(GPP_NT_VUT_MEAN)) %>%
+  ggplot(aes(x = yearmonth, y = GPP_NT_VUT_MEAN)) +
+  geom_line(aes(color = GPP_NT_VUT_MEAN > 0, group = 1))
 ```
