@@ -5,8 +5,7 @@ authors:
       orcid: 0000-0002-7430-7879
 format: 
   html:
-    fig-width: 10
-    fig-height: 10
+    toc: true
 execute: 
   freeze: auto
 ---
@@ -15,6 +14,7 @@ execute:
 ```{r}
 #| label: setup
 #| message: false
+#| warning: false
 #| code-fold: true
 library(dplyr)
 library(tsibble)
@@ -37,8 +37,8 @@ source("R/fcn_utility_FLUXNET.R")
 #| collapse: true
 
 metadata <- load_fluxnet_metadata()
-amf_files <- discover_AMF_files(data_dir = "data/AMF")
-icos_files <- discover_ICOS_files(data_dir = "data/ICOS")
+amf_files <- discover_AMF_files(data_dir = here::here("data/AMF"))
+icos_files <- discover_ICOS_files(data_dir = here::here("data/ICOS"))
 manifest <- bind_rows(amf_files, icos_files)
 
 # deduplicate manifest?
@@ -133,13 +133,20 @@ plot_df <- bind_rows(
 Plot of historical data
 
 ```{r}
+#| column: body-outset
+#| fig-width: 10
+#| fig-height: 15
 plot_df_sf <- sf::st_as_sf(
   plot_df,
   coords = c("LOCATION_LONG", "LOCATION_LAT")
 )
+
+sites_bbox <- sf::st_bbox(plot_df_sf)
+
 world <- ne_countries() %>%
   st_set_crs("4326") %>%
   filter(continent != "Antarctica")
+
 
 #TODO different color palettes for different variables?
 p_hist <- map(glue::glue("hist_{vars_of_interest}"), \(var) {
@@ -151,7 +158,7 @@ p_hist <- map(glue::glue("hist_{vars_of_interest}"), \(var) {
     geom_sf(aes(color = .data[[var]]), na.rm = TRUE) +
     #   scale_color_continuous_diverging() +
     scale_color_binned_diverging() +
-    coord_sf() +
+    coord_sf(xlim = c(sites_bbox["xmin"], sites_bbox["xmax"])) +
     labs(
       subtitle = "1981-2020 mean",
       color = glue::glue("{lab} gC m<sup>-2</sup> y<sup>-1</sup>")
@@ -166,6 +173,9 @@ wrap_plots(p_hist, ncol = 1)
 
 
 ```{r}
+#| column: body-outset
+#| fig-width: 10
+#| fig-height: 15
 p_recent <- map(glue::glue("recent_{vars_of_interest}"), \(var) {
   lab <- str_extract(var, "GPP|NEE|RECO")
   plot_df_sf %>%
@@ -175,7 +185,7 @@ p_recent <- map(glue::glue("recent_{vars_of_interest}"), \(var) {
     geom_sf(aes(color = .data[[var]]), na.rm = TRUE) +
     #   scale_color_continuous_diverging() +
     scale_color_binned_diverging() +
-    coord_sf() +
+    coord_sf(xlim = c(sites_bbox["xmin"], sites_bbox["xmax"])) +
     labs(
       subtitle = "> 2020 mean",
       color = glue::glue("{lab} gC m<sup>-2</sup> y<sup>-1</sup>")
@@ -188,6 +198,9 @@ wrap_plots(p_recent, ncol = 1)
 
 
 ```{r}
+#| column: body-outset
+#| fig-width: 10
+#| fig-height: 15
 p_diff <- map(glue::glue("diff_{vars_of_interest}"), \(var) {
   lab <- str_extract(var, "GPP|NEE|RECO")
   plot_df_sf %>%
@@ -197,7 +210,7 @@ p_diff <- map(glue::glue("diff_{vars_of_interest}"), \(var) {
     geom_sf(aes(color = .data[[var]]), na.rm = TRUE) +
     #   scale_color_continuous_diverging() +
     scale_color_binned_diverging() +
-    coord_sf() +
+    coord_sf(xlim = c(sites_bbox["xmin"], sites_bbox["xmax"])) +
     labs(
       subtitle = "recent - historic",
       color = glue::glue("{lab} gC m<sup>-2</sup> y<sup>-1</sup>")
@@ -213,7 +226,6 @@ wrap_plots(p_diff, ncol = 1)
 
 E.g. one site:
 ```{r}
-#| fig-height: 5
 monthly %>%
   filter(site == "US-Ha1") %>%
   ggplot(aes(x = yearmonth, y = GPP_NT_VUT_MEAN)) +
@@ -236,7 +248,6 @@ anomalies <-
 E.g. one site:
 
 ```{r}
-#| fig-height: 5
 anomalies %>%
   filter(site == "US-Ha1", !is.na(GPP_NT_VUT_MEAN)) %>%
   ggplot(aes(x = yearmonth, y = GPP_NT_VUT_MEAN)) +
@@ -250,7 +261,7 @@ With an arbitrary polygon (e.g. a country, a biome, etc.), extract and average (
 
 ```{r}
 # pick a polygon
-usa <- ne_countries(country = "United States of America")
+usa <- ne_countries(country = "United States of America") %>% st_set_crs("4326")
 
 # figure out which sites are in the polygon
 metadata_sf <- metadata %>%
@@ -258,8 +269,20 @@ metadata_sf <- metadata %>%
   st_set_crs(st_crs(usa)) #arbitrary lat/lon CRS
 
 # subset of sites that are in the polygon
-sites_sub <- metadata_sf[st_intersects(usa, metadata_sf)[[1]], ] %>% pull(site)
+metadata_sf_sub <- metadata_sf[st_intersects(usa, metadata_sf)[[1]], ]
+sites_sub <- metadata_sf_sub$site
 
+ggplot() +
+  geom_sf(data = world, fill = "white") +
+  # geom_sf(data = plot_df_sf) +
+  # geom_sf(data = usa, fill = "green", alpha = 0.5) +
+  geom_sf(data = metadata_sf_sub, color = "darkgreen") +
+  coord_sf(xlim = c(sites_bbox["xmin"], sites_bbox["xmax"])) +
+  theme_bw()
+```
+
+
+```{r}
 monthly_sub <- monthly %>%
   filter(site %in% sites_sub)
 
@@ -282,7 +305,8 @@ ggplot(mean_monthly_sub, aes(x = yearmonth, y = GPP_NT_VUT_MEAN_mean)) +
       ymax = GPP_NT_VUT_MEAN_mean + GPP_NT_VUT_MEAN_sd
     ),
     alpha = 0.3
-  )
+  ) +
+  labs(title = "Mean (±SD) in subset")
 
 # Or maybe we just want all the sites plotted as anomalies
 monthly_sub %>%
@@ -296,7 +320,8 @@ monthly_sub %>%
   filter(is.finite(GPP_NT_VUT_MEAN)) %>%
   ggplot(aes(x = yearmonth, y = GPP_NT_VUT_MEAN, color = site)) +
   geom_line(alpha = 0.3) +
-  theme(legend.position = "none")
+  theme(legend.position = "none") +
+  labs(title = "Anomalies in subset")
 ```
 
 That is not very nice looking.
@@ -313,12 +338,14 @@ monthly_sub %>%
     .by = c(site, month)
   ) %>%
   group_by(yearmonth) %>%
-  summarize(across(
-    vars_of_interest,
-    .fns = list(mean = \(x) mean(x, na.rm = TRUE), sd = \(x) {
-      sd(x, na.rm = TRUE)
-    })
-  )) %>%
+  summarize(
+    across(
+      all_of(vars_of_interest),
+      .fns = list(mean = \(x) mean(x, na.rm = TRUE), sd = \(x) {
+        sd(x, na.rm = TRUE)
+      })
+    )
+  ) %>%
   filter(if_all(starts_with(vars_of_interest), is.finite)) %>%
   ggplot(aes(x = yearmonth, y = GPP_NT_VUT_MEAN_mean)) +
   geom_line() +
@@ -328,5 +355,6 @@ monthly_sub %>%
       ymax = GPP_NT_VUT_MEAN_mean + GPP_NT_VUT_MEAN_sd
     ),
     alpha = 0.3
-  )
+  ) +
+  labs(title = "Mean (±SD) anomaly in subset")
 ```
