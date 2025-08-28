@@ -77,7 +77,7 @@ I'm not sure if this is correct, but these are the [variables](https://fluxnet.o
 - GPP: `GPP_NT_VUT_MEAN` ± `GPP_NT_VUT_SE` (units: gC m-2 y-1)
 - NEE: `NEE_VUT_MEAN` ± `NEE_VUT_SE` (units: gC m-2 y-1	)
 - RECO: `RECO_NT_VUT_MEAN` ± `RECO_NT_VUT_SE` (units: gC m-2 y-1)
-- ET: ???
+- ET: (will need to get from external source and join in)
 
 ```{r}
 vars_of_interest <- c(
@@ -299,8 +299,8 @@ sites_sub <- metadata_sf_sub$site
 ggplot() +
   geom_sf(data = world, fill = "white") +
   # geom_sf(data = plot_df_sf) +
-  # geom_sf(data = usa, fill = "green", alpha = 0.5) +
-  geom_sf(data = metadata_sf_sub, color = "darkgreen") +
+  geom_sf(data = usa, fill = "green", alpha = 0.5) +
+  # geom_sf(data = metadata_sf_sub, color = "darkgreen") + # these sites don't all necessarily have data
   coord_sf(xlim = c(sites_bbox["xmin"], sites_bbox["xmax"])) +
   theme_bw()
 ```
@@ -314,10 +314,11 @@ monthly_sub <- monthly %>%
 mean_monthly_sub <- monthly_sub %>%
   group_by(yearmonth) %>%
   summarize(across(
-    vars_of_interest,
-    .fns = list(mean = \(x) mean(x, na.rm = TRUE), sd = \(x) {
-      sd(x, na.rm = TRUE)
-    })
+    all_of(vars_of_interest),
+    .fns = list(
+      mean = \(x) mean(x, na.rm = TRUE),
+      sd = \(x) sd(x, na.rm = TRUE)
+    )
   )) %>%
   filter(if_all(starts_with(vars_of_interest), is.finite))
 
