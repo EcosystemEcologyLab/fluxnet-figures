@@ -1,0 +1,385 @@
+---
+title: "Global Fluxnet Figures"
+authors:
+    - name: Eric R. Scott
+      orcid: 0000-0002-7430-7879
+format: 
+  html:
+    toc: true
+execute: 
+  freeze: auto
+---
+
+
+```{r}
+#| label: setup
+#| message: false
+#| warning: false
+#| code-fold: true
+library(dplyr)
+library(tsibble)
+library(purrr)
+library(ggplot2)
+library(ggtext)
+library(patchwork)
+library(sf)
+library(colorspace)
+library(rnaturalearth)
+source("R/fcn_utility_FLUXNET.R")
+
+```
+
+## Load Data
+
+```{r}
+#| label: data
+#| cache: true
+#| collapse: true
+
+metadata <- load_fluxnet_metadata()
+amf_files <- discover_AMF_files(data_dir = here::here("data/AMF"))
+icos_files <- discover_ICOS_files(data_dir = here::here("data/ICOS"))
+manifest <- bind_rows(amf_files, icos_files)
+
+# deduplicate manifest?
+manifest <- manifest %>%
+  distinct(
+    site,
+    data_product,
+    dataset,
+    time_integral,
+    start_year,
+    end_year,
+    .keep_all = TRUE
+  )
+annual <- manifest %>%
+  filter(time_integral == "YY") %>%
+  load_fluxnet_data() %>%
+  mutate(across(where(is.numeric), \(x) na_if(x, -9999))) %>%
+  mutate(year = as.integer(TIMESTAMP), .before = TIMESTAMP) %>%
+  left_join(metadata %>% select(-SITEID, -SITE_ID), by = join_by(site))
+
+monthly <- manifest %>%
+  filter(time_integral == "MM") %>%
+  load_fluxnet_data() %>%
+  mutate(across(where(is.numeric), \(x) na_if(x, -9999))) %>%
+  mutate(
+    yearmonth = tsibble::yearmonth(as.character(TIMESTAMP), format = "%Y%m"),
+    .before = TIMESTAMP
+  ) %>%
+  left_join(metadata %>% select(-SITEID, -SITE_ID), by = join_by(site))
+```
+
+::: {.callout-important}
+
+I'm not sure if this is correct, but these are the [variables](https://fluxnet.org/data/fluxnet2015-dataset/fullset-data-product/) I'm using for fluxes:
+
+- GPP: `GPP_NT_VUT_MEAN` ± `GPP_NT_VUT_SE` (units: gC m-2 y-1)
+- NEE: `NEE_VUT_MEAN` ± `NEE_VUT_SE` (units: gC m-2 y-1	)
+- RECO: `RECO_NT_VUT_MEAN` ± `RECO_NT_VUT_SE` (units: gC m-2 y-1)
+- ET: (will need to get from external source and join in)
+
+```{r}
+vars_of_interest <- c(
+  "GPP_NT_VUT_MEAN",
+  "NEE_VUT_MEAN",
+  "RECO_NT_VUT_MEAN"
+)
+```
+
+:::
+
+TODO: Get QC variables and use to remove all the (poorly) gap-filled data.
+
+## Maps to compare "historical" with "recent"
+
+I don't know if there is an established time range for a "historical" period but I guess I'll go with 1981--2020 for now.
+
+```{r}
+annual$year %>% range()
+annual_historic <- annual %>%
+  group_by(site) %>%
+  filter(year %in% 1981:2020) %>%
+  summarize(
+    across(any_of(matches(vars_of_interest)), \(x) mean(x, na.rm = TRUE))
+  ) %>%
+  #some sites apparently have no data in this range
+  filter(if_all(all_of(vars_of_interest), is.finite))
+
+annual_recent <- annual %>%
+  group_by(site) %>%
+  filter(year > 2020) %>%
+  summarize(across(any_of(matches(vars_of_interest)), \(x) {
+    mean(x, na.rm = TRUE)
+  })) %>%
+  filter(if_all(all_of(vars_of_interest), is.finite))
+
+#get a single dataset with historical, recent, and differences
+plot_df <- bind_rows(
+  annual_historic %>% mutate(period = "hist"),
+  annual_recent %>% mutate(period = "recent")
+) %>%
+  pivot_longer(c(-site, -period)) %>%
+  pivot_wider(names_from = "period", values_from = "value") %>%
+  mutate(diff = recent - hist) %>%
+  pivot_wider(names_from = name, values_from = c(hist, recent, diff)) %>%
+  #join in lat lon
+  left_join(metadata %>% select(site, LOCATION_LAT, LOCATION_LONG))
+```
+
+
+
+
+Plot of historical data
+
+```{r}
+#| column: body-outset
+#| fig-width: 10
+#| fig-height: 15
+plot_df_sf <- sf::st_as_sf(
+  plot_df,
+  coords = c("LOCATION_LONG", "LOCATION_LAT")
+)
+
+sites_bbox <- sf::st_bbox(plot_df_sf)
+
+world <- ne_countries() %>%
+  st_set_crs("4326") %>%
+  filter(continent != "Antarctica")
+
+
+#TODO different color palettes for different variables?
+p_hist <- map(glue::glue("hist_{vars_of_interest}"), \(var) {
+  lab <- str_extract(var, "GPP|NEE|RECO")
+  plot_df_sf %>%
+    filter(if_all(all_of(var), is.finite)) %>%
+    ggplot() +
+    geom_sf(data = world, fill = "white") +
+    geom_sf(aes(color = .data[[var]]), na.rm = TRUE) +
+    #   scale_color_continuous_diverging() +
+    scale_color_binned_diverging() +
+    coord_sf(xlim = c(sites_bbox["xmin"], sites_bbox["xmax"])) +
+    labs(
+      subtitle = "1981-2020 mean",
+      color = glue::glue("{lab} gC m<sup>-2</sup> y<sup>-1</sup>")
+    ) +
+    theme_bw() +
+    theme(legend.title = element_markdown())
+})
+# p_hist
+wrap_plots(p_hist, ncol = 1)
+
+```
+
+
+```{r}
+#| column: body-outset
+#| fig-width: 10
+#| fig-height: 15
+p_recent <- map(glue::glue("recent_{vars_of_interest}"), \(var) {
+  lab <- str_extract(var, "GPP|NEE|RECO")
+  plot_df_sf %>%
+    filter(if_all(all_of(var), is.finite)) %>%
+    ggplot() +
+    geom_sf(data = world, fill = "white") +
+    geom_sf(aes(color = .data[[var]]), na.rm = TRUE) +
+    #   scale_color_continuous_diverging() +
+    scale_color_binned_diverging() +
+    coord_sf(xlim = c(sites_bbox["xmin"], sites_bbox["xmax"])) +
+    labs(
+      subtitle = "> 2020 mean",
+      color = glue::glue("{lab} gC m<sup>-2</sup> y<sup>-1</sup>")
+    ) +
+    theme_bw() +
+    theme(legend.title = element_markdown())
+})
+wrap_plots(p_recent, ncol = 1)
+```
+
+
+```{r}
+#| column: body-outset
+#| fig-width: 10
+#| fig-height: 15
+p_diff <- map(glue::glue("diff_{vars_of_interest}"), \(var) {
+  lab <- str_extract(var, "GPP|NEE|RECO")
+  plot_df_sf %>%
+    filter(if_all(all_of(var), is.finite)) %>%
+    ggplot() +
+    geom_sf(data = world, fill = "white") +
+    geom_sf(aes(color = .data[[var]]), na.rm = TRUE) +
+    #   scale_color_continuous_diverging() +
+    scale_color_binned_diverging() +
+    coord_sf(xlim = c(sites_bbox["xmin"], sites_bbox["xmax"])) +
+    labs(
+      subtitle = "recent - historic",
+      color = glue::glue("{lab} gC m<sup>-2</sup> y<sup>-1</sup>")
+    ) +
+    theme_bw() +
+    theme(legend.title = element_markdown())
+})
+wrap_plots(p_diff, ncol = 1)
+```
+
+
+## Timeseries of anomalies
+
+E.g. one site:
+```{r}
+monthly %>%
+  filter(site == "US-Ha1") %>%
+  ggplot(aes(x = yearmonth, y = GPP_NT_VUT_MEAN)) +
+  geom_line()
+```
+
+Calculate anomalies as the difference at each yearmonth from the average for that month (at each site?)
+
+```{r}
+anomalies <-
+  monthly %>%
+  select(yearmonth, site, all_of(vars_of_interest), IGBP) %>%
+  mutate(month = month(yearmonth), .before = yearmonth) %>%
+  mutate(
+    across(all_of(vars_of_interest), \(x) x - mean(x, na.rm = TRUE)),
+    .by = c(site, month)
+  )
+```
+
+E.g. one site:
+
+```{r}
+anomalies %>%
+  filter(site == "US-Ha1", !is.na(GPP_NT_VUT_MEAN)) %>%
+  ggplot(aes(x = yearmonth, y = GPP_NT_VUT_MEAN)) +
+  geom_line(aes(color = GPP_NT_VUT_MEAN > 0, group = 1)) #TODO: find better way to color anomalies
+```
+
+By IGBP averaged across sites
+
+```{r}
+anomalies %>%
+  group_by(yearmonth, IGBP) %>%
+  summarize(across(
+    all_of(vars_of_interest),
+    .fns = list(mean = \(x) mean(x, na.rm = TRUE), sd = \(x) {
+      sd(x, na.rm = TRUE)
+    })
+  )) %>%
+  ggplot(aes(x = yearmonth, y = GPP_NT_VUT_MEAN_mean)) +
+  facet_wrap(vars(IGBP), scales = "free") +
+  geom_line() +
+  geom_ribbon(
+    aes(
+      ymin = GPP_NT_VUT_MEAN_mean - GPP_NT_VUT_MEAN_sd,
+      ymax = GPP_NT_VUT_MEAN_mean + GPP_NT_VUT_MEAN_sd
+    ),
+    color = NA,
+    alpha = 0.4
+  )
+```
+
+## Zonal timeseries
+
+With an arbitrary polygon (e.g. a country, a biome, etc.), extract and average (?) timeseries of all sites in the polygon
+
+
+```{r}
+# pick a polygon
+usa <- ne_countries(country = "United States of America") %>% st_set_crs("4326")
+
+# figure out which sites are in the polygon
+metadata_sf <- metadata %>%
+  st_as_sf(coords = c("LOCATION_LONG", "LOCATION_LAT")) %>%
+  st_set_crs(st_crs(usa)) #arbitrary lat/lon CRS
+
+# subset of sites that are in the polygon
+metadata_sf_sub <- metadata_sf[st_intersects(usa, metadata_sf)[[1]], ]
+sites_sub <- metadata_sf_sub$site
+
+ggplot() +
+  geom_sf(data = world, fill = "white") +
+  # geom_sf(data = plot_df_sf) +
+  geom_sf(data = usa, fill = "green", alpha = 0.5) +
+  # geom_sf(data = metadata_sf_sub, color = "darkgreen") + # these sites don't all necessarily have data
+  coord_sf(xlim = c(sites_bbox["xmin"], sites_bbox["xmax"])) +
+  theme_bw()
+```
+
+
+```{r}
+monthly_sub <- monthly %>%
+  filter(site %in% sites_sub)
+
+# get monthly means I guess?
+mean_monthly_sub <- monthly_sub %>%
+  group_by(yearmonth) %>%
+  summarize(across(
+    all_of(vars_of_interest),
+    .fns = list(
+      mean = \(x) mean(x, na.rm = TRUE),
+      sd = \(x) sd(x, na.rm = TRUE)
+    )
+  )) %>%
+  filter(if_all(starts_with(vars_of_interest), is.finite))
+
+ggplot(mean_monthly_sub, aes(x = yearmonth, y = GPP_NT_VUT_MEAN_mean)) +
+  geom_line() +
+  geom_ribbon(
+    aes(
+      ymin = GPP_NT_VUT_MEAN_mean - GPP_NT_VUT_MEAN_sd,
+      ymax = GPP_NT_VUT_MEAN_mean + GPP_NT_VUT_MEAN_sd
+    ),
+    alpha = 0.3
+  ) +
+  labs(title = "Mean (±SD) in subset")
+
+# Or maybe we just want all the sites plotted as anomalies
+monthly_sub %>%
+  select(yearmonth, site, all_of(vars_of_interest)) %>%
+  mutate(month = month(yearmonth), .before = yearmonth) %>%
+  mutate(
+    across(all_of(vars_of_interest), \(x) x - mean(x, na.rm = TRUE)),
+    .by = c(site, month)
+  ) %>%
+  # filter(if_all(starts_with(vars_of_interest), is.finite)) %>%
+  filter(is.finite(GPP_NT_VUT_MEAN)) %>%
+  ggplot(aes(x = yearmonth, y = GPP_NT_VUT_MEAN, color = site)) +
+  geom_line(alpha = 0.3) +
+  theme(legend.position = "none") +
+  labs(title = "Anomalies in subset")
+```
+
+That is not very nice looking.
+
+To plot anomalies for a geographical subset, would you first normalize then take the average or average and then normalize?  Probably the former?
+
+
+```{r}
+monthly_sub %>%
+  select(yearmonth, site, all_of(vars_of_interest)) %>%
+  mutate(month = month(yearmonth), .before = yearmonth) %>%
+  mutate(
+    across(all_of(vars_of_interest), \(x) x - mean(x, na.rm = TRUE)),
+    .by = c(site, month)
+  ) %>%
+  group_by(yearmonth) %>%
+  summarize(
+    across(
+      all_of(vars_of_interest),
+      .fns = list(mean = \(x) mean(x, na.rm = TRUE), sd = \(x) {
+        sd(x, na.rm = TRUE)
+      })
+    )
+  ) %>%
+  filter(if_all(starts_with(vars_of_interest), is.finite)) %>%
+  ggplot(aes(x = yearmonth, y = GPP_NT_VUT_MEAN_mean)) +
+  geom_line() +
+  geom_ribbon(
+    aes(
+      ymin = GPP_NT_VUT_MEAN_mean - GPP_NT_VUT_MEAN_sd,
+      ymax = GPP_NT_VUT_MEAN_mean + GPP_NT_VUT_MEAN_sd
+    ),
+    alpha = 0.3
+  ) +
+  labs(title = "Mean (±SD) anomaly in subset")
+```
