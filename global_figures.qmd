@@ -89,7 +89,7 @@ vars_of_interest <- c(
 
 :::
 
-TODO: Not sure where the QC variables are, but those would be nice to have.  I think we want to remove all the (poorly) gap-filled data.
+TODO: Get QC variables and use to remove all the (poorly) gap-filled data.
 
 ## Maps to compare "historical" with "recent"
 
@@ -237,7 +237,7 @@ Calculate anomalies as the difference at each yearmonth from the average for tha
 ```{r}
 anomalies <-
   monthly %>%
-  select(yearmonth, site, all_of(vars_of_interest)) %>%
+  select(yearmonth, site, all_of(vars_of_interest), IGBP) %>%
   mutate(month = month(yearmonth), .before = yearmonth) %>%
   mutate(
     across(all_of(vars_of_interest), \(x) x - mean(x, na.rm = TRUE)),
@@ -252,6 +252,30 @@ anomalies %>%
   filter(site == "US-Ha1", !is.na(GPP_NT_VUT_MEAN)) %>%
   ggplot(aes(x = yearmonth, y = GPP_NT_VUT_MEAN)) +
   geom_line(aes(color = GPP_NT_VUT_MEAN > 0, group = 1)) #TODO: find better way to color anomalies
+```
+
+By IGBP averaged across sites
+
+```{r}
+anomalies %>%
+  group_by(yearmonth, IGBP) %>%
+  summarize(across(
+    all_of(vars_of_interest),
+    .fns = list(mean = \(x) mean(x, na.rm = TRUE), sd = \(x) {
+      sd(x, na.rm = TRUE)
+    })
+  )) %>%
+  ggplot(aes(x = yearmonth, y = GPP_NT_VUT_MEAN_mean)) +
+  facet_wrap(vars(IGBP), scales = "free") +
+  geom_line() +
+  geom_ribbon(
+    aes(
+      ymin = GPP_NT_VUT_MEAN_mean - GPP_NT_VUT_MEAN_sd,
+      ymax = GPP_NT_VUT_MEAN_mean + GPP_NT_VUT_MEAN_sd
+    ),
+    color = NA,
+    alpha = 0.4
+  )
 ```
 
 ## Zonal timeseries
