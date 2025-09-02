@@ -89,6 +89,102 @@ vars_of_interest <- c(
 
 :::
 
+## Figures
+
+```{r}
+#| label: site-map
+#| code-fold: true
+#| output: false
+
+world <- ne_countries() %>%
+  st_set_crs(4326) %>%
+  filter(continent != "Antarctica")
+site_yrs <- annual %>%
+  group_by(site) %>%
+  summarize(n_yrs = length(unique(year))) %>%
+  left_join(metadata, by = join_by(site)) %>%
+  st_as_sf(coords = c("LOCATION_LONG", "LOCATION_LAT")) %>%
+  st_set_crs(4326)
+
+# set up bboxes for N. America and Europe
+# These could be defined manually by lat + lon, by countries, or by sites.  This version defines it by sites
+bbox_na <-
+  site_yrs %>%
+  # filter(DATA_SOURCE == "AmeriFlux") %>%
+  filter(COUNTRY %in% c("USA", "Canada", "Mexico", "Panama", "Costa Rica")) %>%
+  st_bbox()
+
+bbox_eu <-
+  site_yrs %>%
+  filter(DATA_SOURCE == "ICOS") %>%
+  filter(
+    COUNTRY %in%
+      c(
+        "Belgium",
+        "Switzerland",
+        "Czechia",
+        "Germany",
+        "Denmark",
+        "Spain",
+        "Finland",
+        "France",
+        "Italy",
+        "Netherlands",
+        "Norway",
+        "Portugul",
+        "Sweden",
+        "UK"
+      )
+  ) %>%
+  st_bbox()
+
+p <- ggplot() +
+  geom_sf(data = world, fill = "white") +
+  geom_sf(data = site_yrs, aes(color = n_yrs), size = 0.5) +
+  scale_color_continuous_sequential(
+    palette = "Viridis",
+    rev = FALSE,
+    end = 0.9
+  ) +
+  theme_void() +
+  theme(
+    panel.background = element_rect(fill = "lightblue", color = "black")
+  )
+
+p1 <- p + coord_sf(default_crs = 4326, lims_method = "geometry_bbox")
+# p1
+p2 <- p +
+  coord_sf(
+    xlim = c(bbox_na["xmin"], bbox_na["xmax"]),
+    ylim = c(bbox_na["ymin"], bbox_na["ymax"])
+  )
+# p2
+p3 <- p +
+  coord_sf(
+    xlim = c(bbox_eu["xmin"], bbox_eu["xmax"]),
+    ylim = c(bbox_eu["ymin"], bbox_eu["ymax"])
+  )
+# p3
+
+p_composite <- p1 /
+  (p3 | p2) +
+  plot_layout(
+    widths = c(1, 0.4, 0.6),
+    heights = c(0.387, 0.5, 0.5),
+    guides = "collect"
+  ) &
+  labs(color = "# yrs")
+
+n_yrs_file <- ggsave("saved_plots/n_yrs_site_map.png", p_composite)
+knitr::plot_crop(n_yrs_file)
+```
+
+```{r}
+#| label: fig-site-map
+#| fig-cap: Map of sites by number of years of data
+knitr::include_graphics(n_yrs_file)
+```
+
 TODO: Get QC variables and use to remove all the (poorly) gap-filled data.
 
 ## Maps to compare "historical" with "recent"
