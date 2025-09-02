@@ -92,6 +92,18 @@ vars_of_interest <- c(
 
 ## Figures
 
+These are the figures outlined [here](https://docs.google.com/document/d/1pboBG_xrkZ-VXZo7OWbEBurycVfVDwIZ3NsmSD-ScXE/edit?tab=t.0)
+
+> F1. FLUXNET site map by biome or record length. (Sec.2)
+> F2. Network-mean annual fluxes (NEE, GPP, RECO, ET) with trends. (Sec.3)
+> F3. Composite anomalies during extreme events (e.g., ENSO, drought). (Sec.3)
+> F4. Global flux maps (baseline and anomaly layers). (Sec.4)
+> F5. Regional highlight panels / bar charts by continent. (Sec.4)
+> F6. Timeseries and normalized trends (Sec.5)
+> F7. Phenology trends for major biomes (onset/peak/offset). (Sec.5)
+> F8. “Year in Flux” thematic figure (rotating). (Sec.6)
+
+
 ```{r}
 #| label: site-map
 #| output: false
@@ -208,7 +220,7 @@ annual_anomalies <- annual %>%
 
 ```{r}
 #| label: fig-annual-anomalies
-#| fig-cap: "Mean ± SD of normalized global fluxes; NEE (a), GPP (b), and RECO (c)"
+#| fig-cap: "Mean ± SD of normalized (i.e. centered by subtracting the mean from the annual mean at each site) global fluxes; NEE (a), GPP (b), and RECO (c)"
 nee <- ggplot(annual_anomalies, aes(x = year)) +
   geom_ribbon(
     aes(
