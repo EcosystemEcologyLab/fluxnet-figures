@@ -26,7 +26,7 @@ library(sf)
 library(colorspace)
 library(rnaturalearth)
 source("R/fcn_utility_FLUXNET.R")
-
+set.seed(123)
 ```
 
 ## Load Data
@@ -94,14 +94,14 @@ vars_of_interest <- c(
 
 These are the figures outlined [here](https://docs.google.com/document/d/1pboBG_xrkZ-VXZo7OWbEBurycVfVDwIZ3NsmSD-ScXE/edit?tab=t.0)
 
-> F1. FLUXNET site map by biome or record length. (Sec.2)
-> F2. Network-mean annual fluxes (NEE, GPP, RECO, ET) with trends. (Sec.3)
-> F3. Composite anomalies during extreme events (e.g., ENSO, drought). (Sec.3)
-> F4. Global flux maps (baseline and anomaly layers). (Sec.4)
-> F5. Regional highlight panels / bar charts by continent. (Sec.4)
-> F6. Timeseries and normalized trends (Sec.5)
-> F7. Phenology trends for major biomes (onset/peak/offset). (Sec.5)
-> F8. “Year in Flux” thematic figure (rotating). (Sec.6)
+1. FLUXNET site map by biome or record length (@fig-site-map).
+2. Network-mean annual fluxes (NEE, GPP, RECO, ET) with trends (@fig-annual-anomalies). 
+3. Composite anomalies during extreme events (e.g., ENSO, drought). 
+4. Global flux maps (baseline and anomaly layers) (@fig-flux-map).
+5. Regional highlight panels / bar charts by continent. 
+6. Timeseries and normalized trends 
+7. Phenology trends for major biomes (onset/peak/offset). 
+8. “Year in Flux” thematic figure (rotating). 
 
 
 ```{r}
@@ -264,135 +264,128 @@ nee +
   plot_annotation(tag_levels = "a")
 ```
 
-## Maps to compare "historical" with "recent"
-
-I don't know if there is an established time range for a "historical" period but I guess I'll go with 1981--2020 for now.
 
 ```{r}
-annual$year %>% range()
-annual_historic <- annual %>%
-  group_by(site) %>%
-  filter(year %in% 1981:2020) %>%
+#| label: fig-extreme
+#| fig-cap: "Composite anomalies during extreme events (e.g., ENSO, drought)"
+
+ggplot()
+```
+
+
+```{r}
+#| label: flux-map
+
+# all years prior to current year
+
+annual_hist <-
+  annual %>%
+  select(site, year, all_of(vars_of_interest)) %>%
+  # filter(site == "CA-DSM") %>%
+  filter(year < max(year)) %>%
   summarize(
-    across(any_of(matches(vars_of_interest)), \(x) mean(x, na.rm = TRUE))
-  ) %>%
-  #some sites apparently have no data in this range
-  filter(if_all(all_of(vars_of_interest), is.finite))
+    .by = site,
+    across(
+      all_of(vars_of_interest),
+      \(x) mean(x, na.rm = TRUE)
+    )
+  )
+# current year - mean of all prior years
 
-annual_recent <- annual %>%
-  group_by(site) %>%
-  filter(year > 2020) %>%
-  summarize(across(any_of(matches(vars_of_interest)), \(x) {
-    mean(x, na.rm = TRUE)
-  })) %>%
-  filter(if_all(all_of(vars_of_interest), is.finite))
+annual_current <-
+  annual %>%
+  select(site, year, all_of(vars_of_interest)) %>%
+  # filter(site == "CA-DSM") %>%
+  filter(year == max(year)) %>%
+  summarize(
+    .by = site,
+    across(
+      all_of(vars_of_interest),
+      \(x) mean(x, na.rm = TRUE)
+    )
+  )
 
-#get a single dataset with historical, recent, and differences
 plot_df <- bind_rows(
-  annual_historic %>% mutate(period = "hist"),
-  annual_recent %>% mutate(period = "recent")
+  annual_hist %>% mutate(period = "hist"),
+  annual_current %>% mutate(period = "curr"),
 ) %>%
   pivot_longer(c(-site, -period)) %>%
   pivot_wider(names_from = "period", values_from = "value") %>%
-  mutate(diff = recent - hist) %>%
-  pivot_wider(names_from = name, values_from = c(hist, recent, diff)) %>%
+  mutate(diff = curr - hist) %>%
+  pivot_wider(names_from = name, values_from = c(hist, curr, diff)) %>%
   #join in lat lon
-  left_join(metadata %>% select(site, LOCATION_LAT, LOCATION_LONG))
-```
+  left_join(metadata %>% select(site, LOCATION_LAT, LOCATION_LONG)) %>%
+  st_as_sf(coords = c("LOCATION_LONG", "LOCATION_LAT")) %>%
+  st_set_crs(4326)
 
-
-
-
-Plot of historical data
-
-```{r}
-#| column: body-outset
-#| fig-width: 10
-#| fig-height: 15
-plot_df_sf <- sf::st_as_sf(
-  plot_df,
-  coords = c("LOCATION_LONG", "LOCATION_LAT")
-)
-
-sites_bbox <- sf::st_bbox(plot_df_sf)
-
-world <- ne_countries() %>%
-  st_set_crs("4326") %>%
-  filter(continent != "Antarctica")
-
-
-#TODO different color palettes for different variables?
-p_hist <- map(glue::glue("hist_{vars_of_interest}"), \(var) {
+# make plots
+p_list <- map(vars_of_interest, \(var) {
   lab <- str_extract(var, "GPP|NEE|RECO")
-  plot_df_sf %>%
-    filter(if_all(all_of(var), is.finite)) %>%
+  var_hist <- paste0("hist_", var)
+  var_diff <- paste0("diff_", var)
+  #left panel: historic
+  p1 <- plot_df %>%
+    filter(if_all(all_of(var_hist), is.finite)) %>%
     ggplot() +
     geom_sf(data = world, fill = "white") +
-    geom_sf(aes(color = .data[[var]]), na.rm = TRUE) +
-    #   scale_color_continuous_diverging() +
-    scale_color_binned_diverging() +
-    coord_sf(xlim = c(sites_bbox["xmin"], sites_bbox["xmax"])) +
+    geom_sf(aes(color = .data[[var_hist]]), size = 0.8, na.rm = TRUE) +
+    scale_color_continuous_sequential(palette = "Viridis") +
+    # scale_color_continuous_diverging() +
+    # scale_color_binned_diverging() +
     labs(
-      subtitle = "1981-2020 mean",
       color = glue::glue("{lab} gC m<sup>-2</sup> y<sup>-1</sup>")
     ) +
-    theme_bw() +
-    theme(legend.title = element_markdown())
-})
-# p_hist
-wrap_plots(p_hist, ncol = 1)
-
-```
-
-
-```{r}
-#| column: body-outset
-#| fig-width: 10
-#| fig-height: 15
-p_recent <- map(glue::glue("recent_{vars_of_interest}"), \(var) {
-  lab <- str_extract(var, "GPP|NEE|RECO")
-  plot_df_sf %>%
-    filter(if_all(all_of(var), is.finite)) %>%
+    coord_sf(expand = FALSE) +
+    theme_void() +
+    theme(
+      legend.title = element_markdown(),
+      legend.position = "bottom",
+      legend.key.width = unit(1, "null"), #stretch to fill width of plot
+      plot.margin = unit(
+        c(4, 4, 4, 4),
+        c("points", "points", "points", "points")
+      ),
+      panel.background = element_rect(fill = "lightblue", color = "black")
+    )
+  #right panel: this year - historic
+  p2 <- plot_df %>%
+    filter(if_all(all_of(var_diff), is.finite)) %>%
     ggplot() +
     geom_sf(data = world, fill = "white") +
-    geom_sf(aes(color = .data[[var]]), na.rm = TRUE) +
-    #   scale_color_continuous_diverging() +
-    scale_color_binned_diverging() +
-    coord_sf(xlim = c(sites_bbox["xmin"], sites_bbox["xmax"])) +
+    geom_sf(aes(color = .data[[var_diff]]), size = 0.8, na.rm = TRUE) +
+    scale_color_continuous_diverging() +
+    # scale_color_binned_diverging() +
     labs(
-      subtitle = "> 2020 mean",
       color = glue::glue("{lab} gC m<sup>-2</sup> y<sup>-1</sup>")
     ) +
-    theme_bw() +
-    theme(legend.title = element_markdown())
+    coord_sf(expand = FALSE) +
+    theme_void() +
+    theme(
+      legend.title = element_markdown(),
+      legend.position = "bottom",
+      legend.key.width = unit(1, "null"), #stretch to fill width of plot
+      plot.margin = unit(
+        c(4, 4, 4, 4),
+        c("points", "points", "points", "points")
+      ),
+      panel.background = element_rect(fill = "lightblue", color = "black")
+    )
+  p1 / p2
 })
-wrap_plots(p_recent, ncol = 1)
-```
 
+```
 
 ```{r}
+#| label: fig-flux-map
+#| fig-cap: "Map of fluxes averaged over all years prior to 2024 (a, c, e) and the difference between the current year (2024) and those prior years (b, d, f)"
+#| layout-nrow: 3
 #| column: body-outset
-#| fig-width: 10
-#| fig-height: 15
-p_diff <- map(glue::glue("diff_{vars_of_interest}"), \(var) {
-  lab <- str_extract(var, "GPP|NEE|RECO")
-  plot_df_sf %>%
-    filter(if_all(all_of(var), is.finite)) %>%
-    ggplot() +
-    geom_sf(data = world, fill = "white") +
-    geom_sf(aes(color = .data[[var]]), na.rm = TRUE) +
-    #   scale_color_continuous_diverging() +
-    scale_color_binned_diverging() +
-    coord_sf(xlim = c(sites_bbox["xmin"], sites_bbox["xmax"])) +
-    labs(
-      subtitle = "recent - historic",
-      color = glue::glue("{lab} gC m<sup>-2</sup> y<sup>-1</sup>")
-    ) +
-    theme_bw() +
-    theme(legend.title = element_markdown())
-})
-wrap_plots(p_diff, ncol = 1)
+#| fig-height: 8
+#| fig-width: 15
+
+wrap_plots(p_list, ncol = 3) + plot_annotation(tag_levels = "a")
 ```
+
 
 
 ## Timeseries of anomalies
