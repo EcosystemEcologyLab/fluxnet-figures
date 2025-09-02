@@ -6,6 +6,7 @@ authors:
 format: 
   html:
     toc: true
+    code-fold: true
 execute: 
   freeze: auto
 ---
@@ -15,7 +16,6 @@ execute:
 #| label: setup
 #| message: false
 #| warning: false
-#| code-fold: true
 library(dplyr)
 library(tsibble)
 library(purrr)
@@ -80,6 +80,7 @@ I'm not sure if this is correct, but these are the [variables](https://fluxnet.o
 - ET: (will need to get from external source and join in)
 
 ```{r}
+#| code-fold: false
 vars_of_interest <- c(
   "GPP_NT_VUT_MEAN",
   "NEE_VUT_MEAN",
@@ -93,7 +94,6 @@ vars_of_interest <- c(
 
 ```{r}
 #| label: site-map
-#| code-fold: true
 #| output: false
 
 world <- ne_countries() %>%
@@ -185,7 +185,72 @@ knitr::plot_crop(n_yrs_file)
 knitr::include_graphics(n_yrs_file)
 ```
 
-TODO: Get QC variables and use to remove all the (poorly) gap-filled data.
+```{r}
+#| label: annual-anomalies
+annual_anomalies <- annual %>%
+  mutate(
+    .by = c(site),
+    across(all_of(vars_of_interest), \(x) x - mean(x, na.rm = TRUE))
+  ) %>%
+  summarize(
+    .by = c(year),
+    across(
+      all_of(vars_of_interest),
+      .fns = list(mean = \(x) mean(x, na.rm = TRUE), sd = \(x) {
+        sd(x, na.rm = TRUE)
+      })
+    )
+  ) %>%
+  # keep only rows where at least one of the means is not NA or Inf
+  filter(if_any(all_of(paste0(vars_of_interest, "_mean")), is.finite))
+
+```
+
+```{r}
+#| label: fig-annual-anomalies
+#| fig-cap: "Mean ± SD of normalized global fluxes; NEE (a), GPP (b), and RECO (c)"
+nee <- ggplot(annual_anomalies, aes(x = year)) +
+  geom_ribbon(
+    aes(
+      ymin = NEE_VUT_MEAN_mean - NEE_VUT_MEAN_sd,
+      ymax = NEE_VUT_MEAN_mean + NEE_VUT_MEAN_sd
+    ),
+    alpha = 0.4
+  ) +
+  geom_line(aes(y = NEE_VUT_MEAN_mean)) +
+  labs(y = "NEE (gC m<sup>-2</sup> y<sup>-1</sup>)") +
+  theme(axis.title.y = element_markdown(), axis.title.x = element_blank())
+
+gpp <- ggplot(annual_anomalies, aes(x = year)) +
+  geom_ribbon(
+    aes(
+      ymin = GPP_NT_VUT_MEAN_mean - GPP_NT_VUT_MEAN_sd,
+      ymax = GPP_NT_VUT_MEAN_mean + GPP_NT_VUT_MEAN_sd
+    ),
+    alpha = 0.4
+  ) +
+  geom_line(aes(y = GPP_NT_VUT_MEAN_mean)) +
+  labs(y = "GPP (gC m<sup>-2</sup> y<sup>-1</sup>)") +
+  theme(axis.title.y = element_markdown(), axis.title.x = element_blank())
+
+reco <- ggplot(annual_anomalies, aes(x = year)) +
+  geom_ribbon(
+    aes(
+      ymin = RECO_NT_VUT_MEAN_mean - RECO_NT_VUT_MEAN_sd,
+      ymax = RECO_NT_VUT_MEAN_mean + RECO_NT_VUT_MEAN_sd
+    ),
+    alpha = 0.4
+  ) +
+  geom_line(aes(y = RECO_NT_VUT_MEAN_mean)) +
+  labs(y = "RECO (gC m<sup>-2</sup> y<sup>-1</sup>)") +
+  theme(axis.title.y = element_markdown(), axis.title.x = element_blank())
+
+nee +
+  gpp +
+  reco +
+  plot_layout(ncol = 2, axes = "collect") +
+  plot_annotation(tag_levels = "a")
+```
 
 ## Maps to compare "historical" with "recent"
 
