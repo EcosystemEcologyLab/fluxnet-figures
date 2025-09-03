@@ -2,13 +2,9 @@
 # ------------------------------------
 
 # Core libs (data wrangling, plotting, rasters, units)
-library(dplyr)
-library(ggplot2)
 library(terra)
 library(geodata)
 library(units)
-
-# (Some are redundant above, but keeping your original loads for consistency)
 library(dplyr)
 library(stringr)
 library(purrr)
