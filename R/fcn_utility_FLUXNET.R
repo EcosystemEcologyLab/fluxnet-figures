@@ -164,10 +164,10 @@ std_pat <-
 std <- tibble(path = all_csvs) %>%
   filter(str_detect(basename(path), std_pat)) %>%
   mutate(filename = basename(path)) %>%
-  extract(
+  tidyr::extract(                              # <— qualify here
     filename,
-    into    = c("site","dataset","time_integral","start_year","end_year"),
-    regex   = std_pat, remove = FALSE, convert = TRUE
+    into  = c("site","dataset","time_integral","start_year","end_year"),
+    regex = std_pat, remove = FALSE, convert = TRUE
   ) %>%
   mutate(
     data_center  = "AMF",
@@ -179,21 +179,22 @@ std <- tibble(path = all_csvs) %>%
 # 2) AUXMETEO / AUXNEE (no separate time_integral)
 aux_pat <-
   "^AMF_([^_]+)_FLUXNET_(AUXMETEO|AUXNEE)_([0-9]{4})-([0-9]{4})_.*\\.csv$"
+
 aux <- tibble(path = all_csvs) %>%
-  filter(str_detect(basename(path), aux_pat)) %>%
-  mutate(filename = basename(path)) %>%
-  extract(
+  dplyr::filter(stringr::str_detect(basename(path), aux_pat)) %>%
+  dplyr::mutate(filename = basename(path)) %>%
+  tidyr::extract(                              # <-- qualify this one too
     filename,
-    into    = c("site","dataset","start_year","end_year"),
-    regex   = aux_pat, remove = FALSE, convert = TRUE
+    into  = c("site","dataset","start_year","end_year"),
+    regex = aux_pat, remove = FALSE, convert = TRUE
   ) %>%
-  mutate(
+  dplyr::mutate(
     data_center   = "AMF",
     data_product  = "FLUXNET",
     time_integral = NA_character_
   ) %>%
-  select(path, filename, data_center, site, data_product,
-         dataset, time_integral, start_year, end_year)
+  dplyr::select(path, filename, data_center, site, data_product,
+                dataset, time_integral, start_year, end_year)
 
 # 3) Now coerce types and stitch together
 make_types <- function(df) {
