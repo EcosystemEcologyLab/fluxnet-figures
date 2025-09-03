@@ -451,7 +451,7 @@ With an arbitrary polygon (e.g. a country, a biome, etc.), extract and average (
 
 ```{r}
 # pick a polygon
-usa <- ne_countries(country = "United States of America") %>% st_set_crs("4326")
+usa <- ne_countries(country = "United States of America") %>% st_set_crs(4326)
 
 # figure out which sites are in the polygon
 metadata_sf <- metadata %>%
@@ -467,7 +467,7 @@ ggplot() +
   # geom_sf(data = plot_df_sf) +
   geom_sf(data = usa, fill = "green", alpha = 0.5) +
   # geom_sf(data = metadata_sf_sub, color = "darkgreen") + # these sites don't all necessarily have data
-  coord_sf(xlim = c(sites_bbox["xmin"], sites_bbox["xmax"])) +
+  # coord_sf(xlim = c(sites_bbox["xmin"], sites_bbox["xmax"])) +
   theme_bw()
 ```
 
