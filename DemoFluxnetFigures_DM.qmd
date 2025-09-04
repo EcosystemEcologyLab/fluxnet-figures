@@ -1,0 +1,382 @@
+---
+title: "FLUXNET Demo Plots"
+author: "Moore Lab (SNRE, UA)"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    number-sections: true
+execute:
+  freeze: auto
+  echo: true
+  warning: false
+  message: true
+params:
+  save_figs: false
+  use_terra: true           
+  data_dir_amf: "data/FLUXNET/AMF"
+  data_dir_icos: "data/FLUXNET/ICOS"
+  worldclim_rds: "data/wc_worldclim_30s.rds"
+---
+
+# Setup
+
+```{r}
+#| label: setup
+#| include: true
+
+library(here)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(readr)
+library(purrr)
+library(stringr)
+library(units)
+library(ggnewscale)
+
+
+
+if (!params$use_terra) {
+  suppressPackageStartupMessages(library(raster))
+} else {
+  suppressPackageStartupMessages(library(terra))
+}
+
+library(plotbiomes)
+
+# Prevent namespace conflicts with 'raster'
+select <- dplyr::select
+filter <- dplyr::filter
+lag    <- dplyr::lag
+
+# --- Prevent namespace conflicts (e.g., raster::select vs dplyr::select) ---
+# Make dplyr verbs explicit so helpers that use unqualified calls get the right ones.
+select <- dplyr::select
+filter <- dplyr::filter
+lag    <- dplyr::lag
+
+# Project helpers
+source("R/fcn_utility_FLUXNET.R")
+source("R/fcn_plot_FLUXNET.R")
+
+# Figure dir + helper
+fig_dir <- here::here("figs")
+if (!dir.exists(fig_dir)) dir.create(fig_dir, recursive = TRUE)
+
+save_if <- function(p, name, width = 7, height = 5, dpi = 300) {
+  if (isTRUE(params$save_figs)) {
+    ggsave(file.path(fig_dir, paste0(name, ".png")), p, width = width, height = height, dpi = dpi)
+  }
+  p
+}
+```
+
+# Load metadata
+
+```{r}
+#| label: metadata
+
+metadata <- load_fluxnet_metadata()
+
+# Ensure 'site' column exists for joins
+if (!"site" %in% names(metadata)) {
+  if ("SITE_ID" %in% names(metadata)) metadata <- dplyr::rename(metadata, site = SITE_ID)
+  if ("SITEID"  %in% names(metadata)) metadata <- dplyr::rename(metadata, site = SITEID)
+}
+
+md_join <- metadata %>% dplyr::select(-any_of(c("SITE_ID","SITEID")))
+```
+
+# Discover files and build manifest
+
+```{r}
+#| label: manifest
+
+amf_files  <- discover_AMF_files(data_dir = here::here(params$data_dir_amf))
+icos_files <- discover_ICOS_files(data_dir = here::here(params$data_dir_icos))
+
+manifest <- dplyr::bind_rows(amf_files, icos_files) %>%
+  dplyr::distinct(site, data_product, dataset, time_integral, start_year, end_year, .keep_all = TRUE)
+
+manifest %>% dplyr::count(dataset, time_integral)
+```
+
+# Load annual FULLSET and join metadata
+
+```{r}
+#| label: annual-data
+
+annual_data <- manifest %>%
+  dplyr::filter(time_integral == "YY", dataset == "FULLSET") %>%
+  load_fluxnet_data() %>%
+  dplyr::mutate(across(where(is.numeric), ~na_if(.x, -9999))) %>%
+  dplyr::mutate(year = as.integer(TIMESTAMP), .before = TIMESTAMP) %>%
+  dplyr::left_join(md_join, by = "site")
+
+glimpse(annual_data)
+```
+
+# IGBP aggregated flux summaries
+
+```{r}
+#| label: plot-igbp-nee
+p_igbp_nee  <- plot_flux_by_igbp(annual_data, "NEE_VUT_REF")$composite_plot
+save_if(p_igbp_nee, "igbp_nee")
+```
+
+```{r}
+#| label: plot-igbp-gpp
+p_igbp_gpp  <- plot_flux_by_igbp(annual_data, "GPP_NT_VUT_REF")$composite_plot
+save_if(p_igbp_gpp, "igbp_gpp")
+```
+
+```{r}
+#| label: plot-igbp-reco
+p_igbp_reco <- plot_flux_by_igbp(annual_data, "RECO_NT_VUT_REF")$composite_plot
+save_if(p_igbp_reco, "igbp_reco")
+```
+
+# Time-sliced comparison (5-yr bins)
+
+```{r}
+#| label: timeslice-nee
+p_timeslice <- plot_flux_by_igbp_timeslice_grouped(annual_data, flux_var = "NEE_VUT_REF")$flux_plot
+save_if(p_timeslice, "timeslice_nee")
+```
+
+# Interannual boxplots by IGBP groups
+
+```{r}
+#| label: grouped-boxplots
+boxplots <- plot_flux_box_by_group(annual_data, flux_var = "RECO_NT_VUT_REF", y_mode = "squish")
+save_if(boxplots$Forest,        "box_forest")
+save_if(boxplots$ShrubOpens,    "box_shrubopens")
+save_if(boxplots$GrassCropsWet, "box_grasscropswet")
+```
+
+# Median time series by IGBP
+
+```{r}
+#| label: ts-nee
+save_if(plot_flux_timeseries_by_igbp(annual_data, "NEE_VUT_REF"), "ts_nee")
+```
+
+```{r}
+#| label: ts-gpp
+save_if(plot_flux_timeseries_by_igbp(annual_data, "GPP_NT_VUT_REF"), "ts_gpp")
+```
+
+```{r}
+#| label: ts-reco
+save_if(plot_flux_timeseries_by_igbp(annual_data, "RECO_NT_VUT_REF"), "ts_reco")
+```
+
+```{r}
+#| label: ts-wue
+save_if(plot_flux_timeseries_by_igbp(annual_data, "WUE"), "ts_wue")
+```
+
+# Latitudinal summaries
+
+```{r}
+#| label: latitudinal
+save_if(plot_latitudinal_flux(annual_data, metadata, "NEE_VUT_REF"),     "lat_nee")
+save_if(plot_latitudinal_flux(annual_data, metadata, "GPP_NT_VUT_REF"),  "lat_gpp")
+save_if(plot_latitudinal_flux(annual_data, metadata, "RECO_NT_VUT_REF"), "lat_reco")
+```
+
+# Climate vs Flux quicklooks
+
+```{r}
+#| label: climate-xy
+cp <- plot_annual_fluxnet_data(annual_data)
+save_if(cp$precip_vs_nee, "precip_vs_nee")
+save_if(cp$temp_vs_gpp,   "temp_vs_gpp")
+
+save_if(PlotXY_annual(annual_data, "GPP_NT_VUT_REF", "LE_F_MDS"), "xy_gpp_le")
+save_if(PlotXY_annual(annual_data, "NEE_VUT_REF",     "LE_F_MDS"), "xy_nee_le")
+```
+
+# Site-level climate & flux summaries (tower)
+
+```{r}
+#| label: site-summaries
+climate_summary <- annual_data %>%
+  dplyr::group_by(site) %>%
+  dplyr::summarize(
+    mean_precip = mean(P_F, na.rm = TRUE),       # mm/yr (tower)
+    mean_temp   = mean(TA_F, na.rm = TRUE),      # °C (tower)
+    mean_GPP    = mean(GPP_NT_VUT_REF, na.rm = TRUE),
+    mean_NEE    = mean(NEE_VUT_REF, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  dplyr::mutate(
+    mean_precip_cm = set_units(mean_precip, "mm") |> set_units("cm"),  # mm → cm
+    NEE_sign = ifelse(mean_NEE < 0, "Sink (NEE < 0)", "Source (NEE ≥ 0)")
+  ) %>%
+  dplyr::left_join(metadata, by = "site")
+
+head(climate_summary)
+```
+
+# WorldClim extraction at tower locations
+
+```{r}
+#| label: worldclim-extract
+wc <- readRDS(here::here(params$worldclim_rds))
+
+# --- Choose lat/lon columns and drop NAs before extraction ---
+lon_candidates <- c("LOCATION_LONG","LONGITUDE","Longitude","lon","Lon","LON")
+lat_candidates <- c("LOCATION_LAT","LATITUDE","Latitude","lat","Lat","LAT")
+
+lon_col <- lon_candidates[lon_candidates %in% names(climate_summary)][1]
+lat_col <- lat_candidates[lat_candidates %in% names(climate_summary)][1]
+
+if (is.na(lon_col) || is.na(lat_col)) {
+  stop("Could not find longitude/latitude columns in climate_summary. ",
+       "Looked for: ", paste(lon_candidates, collapse=", "), " / ",
+       paste(lat_candidates, collapse=", "))
+}
+
+cs_coords <- climate_summary %>%
+  dplyr::rename(LON = !!lon_col, LAT = !!lat_col) %>%
+  dplyr::filter(is.finite(LON), is.finite(LAT))
+
+n_dropped <- nrow(climate_summary) - nrow(cs_coords)
+if (n_dropped > 0) message("WorldClim extraction: dropped ", n_dropped, " site(s) with missing/invalid coordinates.")
+
+# Decide extraction engine: use terra if requested OR if object is a SpatRaster
+use_terra_extraction <- isTRUE(params$use_terra) || inherits(wc, "SpatRaster")
+
+if (use_terra_extraction) {
+  # --- terra path ---
+  if (!requireNamespace("terra", quietly = TRUE)) {
+    stop("terra is required for SpatRaster extraction. Install with install.packages('terra') ",
+         "or set params$use_terra: false and provide a RasterStack/Brick.")
+  }
+  site_pts <- terra::vect(
+    cs_coords,
+    geom = c("LON", "LAT"),
+    crs  = "EPSG:4326"
+  )
+  wc_vals <- terra::extract(wc, site_pts)
+  names(wc_vals) <- make.names(names(wc_vals))
+  cs_coords$MAT_WorldClim <- wc_vals[[grep("bio_1", names(wc_vals))[1]]]
+  cs_coords$MAP_WorldClim <- wc_vals[[grep("bio_12", names(wc_vals))[1]]]
+} else {
+  # --- raster fallback ---
+  if (inherits(wc, "SpatRaster")) {
+    wc_try <- try(suppressWarnings(raster::stack(wc)), silent = TRUE)
+    if (inherits(wc_try, "try-error")) {
+      wc_try <- try(suppressWarnings(as(wc, "Raster")), silent = TRUE)
+    }
+    if (inherits(wc_try, "try-error")) {
+      stop("Could not coerce SpatRaster -> Raster for raster::extract. ",
+           "Set params$use_terra: true to use terra extraction.")
+    }
+    wc <- wc_try
+  }
+  sp_pts <- sp::SpatialPoints(
+    coords = cs_coords[,c("LON","LAT")],
+    proj4string = sp::CRS("+proj=longlat +datum=WGS84 +no_defs")
+  )
+  wc_vals <- raster::extract(wc, sp_pts)
+  nm <- colnames(wc_vals)
+  mat_col <- nm[grepl("bio_1", nm)]
+  map_col <- nm[grepl("bio_12", nm)]
+  cs_coords$MAT_WorldClim <- wc_vals[, mat_col][,1]
+  cs_coords$MAP_WorldClim <- wc_vals[, map_col][,1]
+}
+
+# Merge extracted values back into full climate_summary (by site)
+if (!all(c("site") %in% names(cs_coords))) {
+  cs_coords$site <- climate_summary$site[match(rownames(cs_coords), rownames(climate_summary))]
+}
+climate_summary <- climate_summary %>%
+  dplyr::select(-dplyr::any_of(c("MAT_WorldClim","MAP_WorldClim"))) %>%
+  dplyr::left_join(cs_coords %>% dplyr::select(site, MAT_WorldClim, MAP_WorldClim), by = "site")
+
+# Convert to Whittaker axes
+climate_summary <- climate_summary %>%
+  dplyr::mutate(
+    MAT_WorldClim_C  = MAT_WorldClim / 10,  # °C
+    MAP_WorldClim_cm = MAP_WorldClim / 10   # mm → cm
+  )
+```
+
+# Tower vs WorldClim checks
+
+```{r}
+#| label: wc-checks
+p_wc_mat <- ggplot(climate_summary, aes(x = MAT_WorldClim_C, y = mean_temp)) +
+  geom_point(size = 2.5, alpha = 0.8) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+  labs(x = "WorldClim MAT (°C)", y = "Observed Site MAT (°C)") +
+  theme_classic()
+save_if(p_wc_mat, "wc_vs_site_mat")
+
+p_wc_map <- ggplot(climate_summary, aes(x = MAP_WorldClim, y = mean_precip)) +
+  geom_point(size = 2.5, alpha = 0.8) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+  labs(x = "WorldClim MAP (mm)", y = "Observed Site MAP (mm)") +
+  theme_classic()
+save_if(p_wc_map, "wc_vs_site_map")
+```
+
+# Whittaker biomes with site overlays
+
+```{r}
+#| label: whittaker
+
+data("Whittaker_biomes", package = "plotbiomes")
+
+my_15_colors <- c(
+  "#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e",
+  "#e6ab02", "#a6761d", "#666666", "#1f78b4", "#b2df8a",
+  "#fb9a99", "#fdbf6f", "#cab2d6", "#ffff99", "#8dd3c7"
+)
+
+p_whittaker <- ggplot() +
+  geom_polygon(
+    data = Whittaker_biomes,
+    aes(x = temp_c, y = precp_cm, group = biome, fill = biome),
+    color = "grey80", alpha = 0.4
+  ) +
+  scale_fill_brewer(palette = "BrBG", name = "Biome") +
+  ggnewscale::new_scale_fill() +
+  geom_point(
+    data = climate_summary,
+    aes(x = MAT_WorldClim_C, y = MAP_WorldClim_cm, color = IGBP),
+    size = 2.8, alpha = 0.9
+  ) +
+  scale_color_manual(values = my_15_colors, drop = FALSE, name = "IGBP") +
+  labs(x = "Temperature (°C)", y = "Precipitation (cm yr\u207B\u00B9)") +
+  theme_classic()
+save_if(p_whittaker, "whittaker_igbp")
+
+p_whittaker_nee <- ggplot() +
+  geom_polygon(
+    data = Whittaker_biomes,
+    aes(x = temp_c, y = precp_cm, group = biome, fill = biome),
+    color = "grey80", alpha = 0.4
+  ) +
+  scale_fill_brewer(palette = "BrBG", name = "Biome") +
+  ggnewscale::new_scale_fill() +
+  geom_point(
+    data = climate_summary,
+    aes(x = MAT_WorldClim_C, y = MAP_WorldClim_cm,
+        size = abs(mean_NEE), fill = NEE_sign),
+    shape = 21, color = "black", alpha = 0.9
+  ) +
+  scale_fill_manual(
+    values = c("Sink (NEE < 0)" = "#1b9e77",
+               "Source (NEE ≥ 0)" = "#d95f02"),
+    name = "NEE Sign"
+  ) +
+  scale_size_continuous(name = "|NEE|", range = c(1, 8)) +
+  labs(x = "Temperature (°C)", y = "Precipitation (cm yr\u207B\u00B9)") +
+  theme_classic()
+save_if(p_whittaker_nee, "whittaker_nee")
+```
