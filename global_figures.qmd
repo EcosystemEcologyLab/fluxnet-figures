@@ -51,7 +51,9 @@ manifest <- manifest %>%
     start_year,
     end_year,
     .keep_all = TRUE
-  )
+  ) %>%
+  filter(dataset == "FULLSET")
+
 annual <- manifest %>%
   filter(time_integral == "YY") %>%
   load_fluxnet_data() %>%
@@ -111,6 +113,7 @@ These are the figures outlined [here](https://docs.google.com/document/d/1pboBG_
 world <- ne_countries() %>%
   st_set_crs(4326) %>%
   filter(continent != "Antarctica")
+
 site_yrs <- annual %>%
   group_by(site) %>%
   summarize(n_yrs = length(unique(year))) %>%
