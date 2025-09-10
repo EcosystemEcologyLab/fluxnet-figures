@@ -372,15 +372,20 @@ plot_flux_timeseries_by_igbp <- function(annual_data, flux_var = "NEE_VUT_REF") 
   
   # Y-axis label
   y_label <- if (str_starts(flux_var, "NEE")) {
-    expression(NEE~(mu*mol~m^{-2}~s^{-1}))
+    # expression(NEE~(mu*mol~m^{-2}~s^{-1}))
+    "NEE ($\\mu mol\\ m^{-2}s^{-2}$)"
   } else if (str_starts(flux_var, "GPP")) {
-    expression(GPP~(mu*mol~m^{-2}~s^{-1}))
+    # expression(GPP~(mu*mol~m^{-2}~s^{-1}))
+    "GPP ($\\mu mol\\ m^{-2}s^{-2}$)"
   } else if (str_starts(flux_var, "RECO")) {
-    expression(Reco~(mu*mol~m^{-2}~s^{-1}))
+    # expression(Reco~(mu*mol~m^{-2}~s^{-1}))
+    "Reco ($\\mu mol\\ m^{-2}s^{-2}$)"
   } else if (str_starts(flux_var, "LE")) {
-    expression(LE~(W~m^{-2}))
+    # expression(LE~(W~m^{-2}))
+    "LE ($W\\ m^{-2}$)"
   } else if (str_starts(flux_var, "WUE")) {
-    expression(WUE~(GPP/LE))
+    # expression(WUE~(GPP/LE))
+    "WUE (GPP/LE)"
   } else {
     flux_var
   }
@@ -393,8 +398,8 @@ plot_flux_timeseries_by_igbp <- function(annual_data, flux_var = "NEE_VUT_REF") 
     facet_wrap(~ IGBP, scales = "free_y", ncol = 4) +
     labs(
       x = "Year",
-      y = y_label,
-      title = paste("Median", y_label, "\u00b195% CI by Year & IGBP")
+      y = latex2exp::TeX(y_label),
+      title = latex2exp::TeX(paste("Median", y_label, "\u00b195% CI by Year & IGBP"))
     ) +
     theme_classic(base_size = 14)
 }
