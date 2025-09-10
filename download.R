@@ -5,7 +5,7 @@ source("R/icos_download_extract_read.R")
 icos_download()
 icos_extract(
   zip = "data/Ecosystem final quality (L2) product in ETC-Archive format - release 2025-1.zip",
-  outdir = "data/ICOS",
+  outdir = "data/FLUXNET/ICOS",
   period = c("YY", "MM", "DD")
 )
 
@@ -55,7 +55,7 @@ zip_paths <- amf_download_fluxnet(
   agree_policy = TRUE,
   intended_use = "synthesis",
   intended_use_text = "creating pipeline for standardized figures",
-  out_dir = "data/AMF"
+  out_dir = "data/FLUXNET/AMF"
 )
 
 zip_paths <- fs::dir_ls("data/AMF", glob = "*.zip")
@@ -82,3 +82,8 @@ walk(
   },
   .progress = TRUE
 )
+
+# Download WorldClim v2.1 bioclim variables at 30s (~1 km)
+library(geodata)
+wc <- worldclim_global(var = "bio", res = 0.5, path = "wc_data") # 0.5 arc-min = 30s
+saveRDS(wc, file = "data/wc_worldclim_30s.rds")
