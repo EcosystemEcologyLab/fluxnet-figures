@@ -164,10 +164,10 @@ std_pat <-
 std <- tibble(path = all_csvs) %>%
   filter(str_detect(basename(path), std_pat)) %>%
   mutate(filename = basename(path)) %>%
-  extract(
+  tidyr::extract(                              # <— qualify here
     filename,
-    into    = c("site","dataset","time_integral","start_year","end_year"),
-    regex   = std_pat, remove = FALSE, convert = TRUE
+    into  = c("site","dataset","time_integral","start_year","end_year"),
+    regex = std_pat, remove = FALSE, convert = TRUE
   ) %>%
   mutate(
     data_center  = "AMF",
@@ -179,21 +179,22 @@ std <- tibble(path = all_csvs) %>%
 # 2) AUXMETEO / AUXNEE (no separate time_integral)
 aux_pat <-
   "^AMF_([^_]+)_FLUXNET_(AUXMETEO|AUXNEE)_([0-9]{4})-([0-9]{4})_.*\\.csv$"
+
 aux <- tibble(path = all_csvs) %>%
-  filter(str_detect(basename(path), aux_pat)) %>%
-  mutate(filename = basename(path)) %>%
-  extract(
+  dplyr::filter(stringr::str_detect(basename(path), aux_pat)) %>%
+  dplyr::mutate(filename = basename(path)) %>%
+  tidyr::extract(                              # <-- qualify this one too
     filename,
-    into    = c("site","dataset","start_year","end_year"),
-    regex   = aux_pat, remove = FALSE, convert = TRUE
+    into  = c("site","dataset","start_year","end_year"),
+    regex = aux_pat, remove = FALSE, convert = TRUE
   ) %>%
-  mutate(
+  dplyr::mutate(
     data_center   = "AMF",
     data_product  = "FLUXNET",
     time_integral = NA_character_
   ) %>%
-  select(path, filename, data_center, site, data_product,
-         dataset, time_integral, start_year, end_year)
+  dplyr::select(path, filename, data_center, site, data_product,
+                dataset, time_integral, start_year, end_year)
 
 # 3) Now coerce types and stitch together
 make_types <- function(df) {
@@ -240,50 +241,40 @@ discover_ICOS_files <- function(data_dir = "data") {
   
   # 2a. Legacy FLX_FULLSET / SUBSET files
   flx_manifest <- tibble(path = all_csvs) %>%
-    filter(
-      str_detect(basename(path),
-                 "^FLX_[^_]+_FLUXNET2015_(FULLSET|SUBSET)_(YY|DD|HH|WW)_[0-9]{4}-[0-9]{4}_.*\\.csv$")
+    dplyr::filter(stringr::str_detect(basename(path),
+                                      "^FLX_[^_]+_FLUXNET2015_(FULLSET|SUBSET)_(YY|DD|HH|WW)_[0-9]{4}-[0-9]{4}_.*\\.csv$"
+    )) %>%
+    dplyr::mutate(filename = basename(path)) %>%
+    tidyr::extract(                      # <-- qualify
+      col   = "filename",
+      into  = c("data_center","site","data_product",
+                "dataset","time_integral","start_year","end_year"),
+      regex = "^(FLX)_([^_]+)_(FLUXNET2015)_(FULLSET|SUBSET)_(DD|HH|MM|WW|YY_INTERIM|YY|AUXNEE|AUXMETEO)_([0-9]{4})-([0-9]{4})_.*\\.csv$",
+      remove = FALSE, convert = TRUE
     ) %>%
-    mutate(filename = basename(path)) %>%
-    extract(
-      col     = "filename",
-      into    = c("data_center","site","data_product",
-                  "dataset","time_integral",
-                  "start_year","end_year"),
-      regex   = "^(FLX)_([^_]+)_(FLUXNET2015)_(FULLSET|SUBSET)_(DD|HH|MM|WW|YY_INTERIM|YY|AUXNEE|AUXMETEO)_([0-9]{4})-([0-9]{4})_.*\\.csv$",
-      remove  = FALSE,
-      convert = TRUE
-    ) %>%
-    mutate(across(everything(), as.character)) %>% 
-    mutate(across(ends_with("year"), as.integer)) %>% 
-    select(path, filename, data_center, site, data_product,
-           dataset, time_integral,
-           start_year, end_year)
+    dplyr::mutate(across(everything(), as.character)) %>%
+    dplyr::mutate(across(ends_with("year"), as.integer)) %>%
+    dplyr::select(path, filename, data_center, site, data_product,
+                  dataset, time_integral, start_year, end_year)
   
   # 2b. Modern ICOSETC L2 files
   icos_manifest <- tibble(path = all_csvs) %>%
-    filter(
-      str_detect(basename(path),
-                 "^ICOSETC_[^_]+_FLUXNET")
+    dplyr::filter(stringr::str_detect(basename(path), "^ICOSETC_[^_]+_FLUXNET")) %>%
+    dplyr::mutate(filename = basename(path)) %>%
+    tidyr::extract(                      # <-- qualify
+      col   = "filename",
+      into  = c("data_center","site","data_product","time_integral","dataset"),
+      regex = "^(ICOSETC)_([^_]+)_(FLUXNET)_(DD|HH|MM|WW|YY_INTERIM|YY|AUXNEE|AUXMETEO)_(L2)\\.csv$",
+      remove = FALSE
     ) %>%
-    mutate(filename = basename(path)) %>%
-    extract(
-      col     = "filename",
-      into    = c("data_center","site","data_product",
-                  "time_integral","dataset"),
-      regex   = "^(ICOSETC)_([^_]+)_(FLUXNET)_(DD|HH|MM|WW|YY_INTERIM|YY|AUXNEE|AUXMETEO)_(L2)\\.csv$",
-      remove  = FALSE
-    ) %>%
-    # these don’t embed years in their names:
-    mutate(
+    dplyr::mutate(
       start_year = NA_integer_,
       end_year   = NA_integer_
     ) %>%
-    mutate(across(everything(), as.character)) %>% 
-    mutate(across(ends_with("year"), as.integer)) %>% 
-    select(path, filename, data_center, site, data_product,
-           dataset, time_integral,
-           start_year, end_year)
+    dplyr::mutate(across(everything(), as.character)) %>%
+    dplyr::mutate(across(ends_with("year"), as.integer)) %>%
+    dplyr::select(path, filename, data_center, site, data_product,
+                  dataset, time_integral, start_year, end_year)
   
   # 3. Combine and enforce the same columns as AMF
   manifest <- bind_rows(flx_manifest, icos_manifest)
