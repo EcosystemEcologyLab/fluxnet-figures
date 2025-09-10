@@ -64,7 +64,7 @@ icos_download <- function(dir = "data") {
 #'
 icos_extract <- function(
   zip,
-  outdir = "data/ICOS",
+  outdir = "data/FLUXNET/ICOS",
   site_ids = NULL,
   # countries = NULL, #TODO
   period = c("YY", "MM", "WW", "DD", "HH")
