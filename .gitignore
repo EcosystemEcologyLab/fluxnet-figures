@@ -5,11 +5,10 @@
 
 .DS_Store
 data/*
-plot_fluxnet.html
-plot_fluxnet_files/
 rsconnect/
 .vscode/settings.json
-global_figures.html
-global_figures_files/
 global_figures_cache/
 wc_data/
+/.quarto/
+global_figures_files/*
+plot_fluxnet_files/*

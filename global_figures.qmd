@@ -198,7 +198,7 @@ p_composite <- p1 /
   labs(color = "# yrs")
 
 n_yrs_file <- ggsave(
-  "saved_plots/n_yrs_site_map.png",
+  here::here("saved_plots/n_yrs_site_map.png"),
   plot = p_composite,
   height = 2000,
   width = 2000,
@@ -261,7 +261,7 @@ p_composite <- p1 /
   labs(color = "IGBP")
 
 IGBP_site_file <- ggsave(
-  "saved_plots/IGBP_site_map.png",
+  here::here("saved_plots/IGBP_site_map.png"),
   plot = p_composite,
   width = 2000,
   height = 2000,
