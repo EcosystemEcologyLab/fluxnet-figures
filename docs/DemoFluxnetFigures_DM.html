@@ -1031,8 +1031,8 @@ $ DATA_SOURCE                    &lt;chr&gt; "AmeriFlux", "AmeriFlux", "AmeriFlu
 <span id="cb31-74"><a href="#cb31-74" aria-hidden="true" tabindex="-1"></a><span class="co"># Convert to Whittaker axes</span></span>
 <span id="cb31-75"><a href="#cb31-75" aria-hidden="true" tabindex="-1"></a>climate_summary <span class="ot">&lt;-</span> climate_summary <span class="sc">%&gt;%</span></span>
 <span id="cb31-76"><a href="#cb31-76" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">mutate</span>(</span>
-<span id="cb31-77"><a href="#cb31-77" aria-hidden="true" tabindex="-1"></a>    <span class="at">MAT_WorldClim_C  =</span> MAT_WorldClim ,  <span class="co"># °C</span></span>
-<span id="cb31-78"><a href="#cb31-78" aria-hidden="true" tabindex="-1"></a>    <span class="at">MAP_WorldClim_cm =</span> MAP_WorldClim <span class="sc">/</span><span class="dv">10</span>   <span class="co"># mm → cm</span></span>
+<span id="cb31-77"><a href="#cb31-77" aria-hidden="true" tabindex="-1"></a>    <span class="at">MAT_WorldClim_C  =</span> MAT_WorldClim <span class="sc">/</span> <span class="dv">10</span>,  <span class="co"># °C</span></span>
+<span id="cb31-78"><a href="#cb31-78" aria-hidden="true" tabindex="-1"></a>    <span class="at">MAP_WorldClim_cm =</span> MAP_WorldClim <span class="sc">/</span> <span class="dv">10</span>   <span class="co"># mm → cm</span></span>
 <span id="cb31-79"><a href="#cb31-79" aria-hidden="true" tabindex="-1"></a>  )</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 </div>
