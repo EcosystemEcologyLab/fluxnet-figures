@@ -36,42 +36,45 @@ manifest <- bind_rows(amf_files, icos_files) %>%
 #    - Adds integer year column
 #    - Joins site metadata (IGBP, LAT/LON, etc.) to the annual records
 # -----------------------------------------------------------------------------
-annual_data <- manifest %>%
+annual <- manifest %>%
   filter(time_integral == "YY", dataset == "FULLSET") %>%
   load_fluxnet_data() %>%                                    # reads 383 files here
   mutate(across(where(is.numeric), \(x) na_if(x, -9999))) %>%# sentinel → NA
   mutate(year = as.integer(TIMESTAMP), .before = TIMESTAMP) %>%
   left_join(metadata %>% select(-SITEID, -SITE_ID), by = join_by(site))
 
+
+
+
 # ---- Plot 1a: IGBP Aggregated Flux Summary (Boxplot, Median, Count) ----
 cat("Generating flux summary by IGBP...\n")
-plots_igbp <- plot_flux_by_igbp(annual_data, flux_var = "NEE_VUT_REF")
+plots_igbp <- plot_flux_by_igbp(annual, flux_var = "NEE_VUT_REF")
 print(plots_igbp$composite_plot)
 
 # ---- Plot 1b: IGBP Aggregated Flux Summary (Boxplot, Median, Count) ----
 cat("Generating flux summary by IGBP...\n")
-plots_igbp <- plot_flux_by_igbp(annual_data, flux_var = "GPP_NT_VUT_REF")
+plots_igbp <- plot_flux_by_igbp(annual, flux_var = "GPP_NT_VUT_REF")
 print(plots_igbp$composite_plot)
 
 # ---- Plot 1c: IGBP Aggregated Flux Summary (Boxplot, Median, Count) ----
 cat("Generating flux summary by IGBP...\n")
-plots_igbp <- plot_flux_by_igbp(annual_data, flux_var = "RECO_NT_VUT_REF")
+plots_igbp <- plot_flux_by_igbp(annual, flux_var = "RECO_NT_VUT_REF")
 print(plots_igbp$composite_plot)
 
 # # ---- Plot 1d: IGBP Aggregated Flux Summary (Boxplot, Median, Count) ----
 # cat("Generating flux summary by IGBP...\n")
-# plots_igbp <- plot_flux_by_igbp(annual_data, flux_var = "WUE")
+# plots_igbp <- plot_flux_by_igbp(annual, flux_var = "WUE")
 # print(plots_igbp$composite_plot)
 
 
 # ---- Plot 2: Flux by IGBP and Time Slice (5-year bins) ----
 cat("Generating time-sliced flux comparison...\n")
-plots_timeslice <- plot_flux_by_igbp_timeslice_grouped(annual_data, flux_var = "NEE_VUT_REF")
+plots_timeslice <- plot_flux_by_igbp_timeslice_grouped(annual, flux_var = "NEE_VUT_REF")
 print(plots_timeslice$flux_plot)
 
 # ---- Plot 3: Interannual Boxplots Grouped by IGBP Type ----
 cat("Generating group-wise annual flux boxplots...\n")
-boxplots <- plot_flux_box_by_group(annual_data, flux_var = "RECO_NT_VUT_REF", y_mode = "squish")
+boxplots <- plot_flux_box_by_group(annual, flux_var = "RECO_NT_VUT_REF", y_mode = "squish")
 print(boxplots$Forest)
 print(boxplots$ShrubOpens)
 print(boxplots$GrassCropsWet)
@@ -80,38 +83,38 @@ print(boxplots$GrassCropsWet)
 
 # ---- Plot 4a: Timeseries of Median Fluxes by IGBP ----
 cat("Generating timeseries of median NEE by IGBP...\n")
-ts_plot <- plot_flux_timeseries_by_igbp(annual_data, flux_var = "NEE_VUT_REF")
+ts_plot <- plot_flux_timeseries_by_igbp(annual, flux_var = "NEE_VUT_REF")
 print(ts_plot)
 
 # ---- Plot 4b: Timeseries of Median Fluxes by IGBP ----
 cat("Generating timeseries of median GPP by IGBP...\n")
-ts_plot <- plot_flux_timeseries_by_igbp(annual_data, flux_var = "GPP_NT_VUT_REF")
+ts_plot <- plot_flux_timeseries_by_igbp(annual, flux_var = "GPP_NT_VUT_REF")
 print(ts_plot)
 
 # ---- Plot 4c: Timeseries of Median Fluxes by IGBP ----
 cat("Generating timeseries of median RECO by IGBP...\n")
-ts_plot <- plot_flux_timeseries_by_igbp(annual_data, flux_var = "RECO_NT_VUT_REF")
+ts_plot <- plot_flux_timeseries_by_igbp(annual, flux_var = "RECO_NT_VUT_REF")
 print(ts_plot)
 
 # ---- Plot 4d: Timeseries of Median Fluxes by IGBP ----
 cat("Generating timeseries of median WUE by IGBP...\n")
-ts_plot <- plot_flux_timeseries_by_igbp(annual_data, flux_var = "WUE")
+ts_plot <- plot_flux_timeseries_by_igbp(annual, flux_var = "WUE")
 print(ts_plot)
 
 # ---- Plot 5: Latitudinal Summary (Ribbon + Points) ----
 #5a 
 cat("Generating latitudinal flux summary...\n")
-lat_plot <- plot_latitudinal_flux(annual_data, metadata, flux_var = "NEE_VUT_REF")
+lat_plot <- plot_latitudinal_flux(annual, metadata, flux_var = "NEE_VUT_REF")
 print(lat_plot)
 
 #5b
 cat("Generating latitudinal flux summary...\n")
-lat_plot <- plot_latitudinal_flux(annual_data, metadata, flux_var = "GPP_NT_VUT_REF")
+lat_plot <- plot_latitudinal_flux(annual, metadata, flux_var = "GPP_NT_VUT_REF")
 print(lat_plot)
 
 #5c
 cat("Generating latitudinal flux summary...\n")
-lat_plot <- plot_latitudinal_flux(annual_data, metadata, flux_var = "RECO_NT_VUT_REF")
+lat_plot <- plot_latitudinal_flux(annual, metadata, flux_var = "RECO_NT_VUT_REF")
 print(lat_plot)
 
 
@@ -122,17 +125,17 @@ print(lat_plot)
 
 # ---- Plot 7: Scatterplots of Climate vs Flux ----
 cat("Generating annual precipitation vs NEE and temperature vs GPP...\n")
-climate_plots <- plot_annual_fluxnet_data(annual_data)
+climate_plots <- plot_annual_fluxnet_data(annual)
 print(climate_plots$precip_vs_nee)
 print(climate_plots$temp_vs_gpp)
 
 
 # ---- Plot 8: General XY Scatter (GPP vs LE) ----
 cat("Generating general scatterplot of GPP vs LE...\n")
-scatter <- PlotXY_annual(annual_data, x_var = "GPP_NT_VUT_REF", y_var = "LE_F_MDS")
+scatter <- PlotXY_annual(annual, x_var = "GPP_NT_VUT_REF", y_var = "LE_F_MDS")
 print(scatter)
 
-scatter <- PlotXY_annual(annual_data, x_var = "NEE_VUT_REF", y_var = "LE_F_MDS")
+scatter <- PlotXY_annual(annual, x_var = "NEE_VUT_REF", y_var = "LE_F_MDS")
 print(scatter)
 
 # ---- Optional: Save plots to folder ----
