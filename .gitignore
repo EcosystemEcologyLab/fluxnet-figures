@@ -12,3 +12,4 @@ wc_data/
 /.quarto/
 global_figures_files/*
 plot_fluxnet_files/*
+**/*.quarto_ipynb
