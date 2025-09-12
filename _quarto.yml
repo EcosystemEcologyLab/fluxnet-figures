@@ -1,7 +1,8 @@
 project:
   type: website
   render:
-    - index.qmd   # only build this page
+    - index.qmd
+  output-dir: docs     # <-- must live under `project:`
 
 website:
   title: "Fluxnet Figures"
