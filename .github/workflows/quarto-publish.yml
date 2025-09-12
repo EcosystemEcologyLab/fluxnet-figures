@@ -45,8 +45,10 @@ jobs:
       - name: Setup Quarto
         uses: quarto-dev/quarto-actions/setup@v2
         witd)
+# --- Render the website WITHOUT running code (temporary) ---
       - name: Render site
-        run: quarto render
+        run: quarto render --no-execute
+
 
       # Upload the built site (_site) and deploy to GitHub Pages
       - name: Upload artifact
