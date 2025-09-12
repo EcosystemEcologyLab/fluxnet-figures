@@ -1,4 +1,14 @@
-project: 
-  type: default
-  output-dir: docs/
-  execute-dir: project
+project:
+  type: website
+  render:
+    - index.qmd   # only build this page
+
+website:
+  title: "Fluxnet Figures"
+
+format:
+  html:
+    theme: cosmo
+
+execute:
+  freeze: auto
