@@ -1,0 +1,22 @@
+Package: fluxnet-figures
+Type: Website
+Title: Quarto site
+Version: 0.0.1
+Encoding: UTF-8
+Depends:
+    R (>= 4.2)
+Imports:
+    here,
+    dplyr,
+    tidyr,
+    ggplot2,
+    readr,
+    purrr,
+    stringr,
+    units,
+    ggnewscale,
+    raster,
+    terra,
+    plotbiomes,
+    sf,
+    sp
