@@ -301,7 +301,7 @@ climate_summary <- climate_summary %>%
 # Convert to Whittaker axes
 climate_summary <- climate_summary %>%
   dplyr::mutate(
-    MAT_WorldClim_C  = MAT_WorldClim,  # °C
+    MAT_WorldClim_C  = MAT_WorldClim / 10,  # °C
     MAP_WorldClim_cm = MAP_WorldClim / 10   # mm → cm
   )
 ```
