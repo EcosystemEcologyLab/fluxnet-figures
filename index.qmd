@@ -1,9 +1,10 @@
+
 ---
-title: "FLUXNET Demo Plots"
+title: "FLUXNET Demo Plots (with Global Maps)"
 authors:
-    - name: Dave Moore
-    - name: Eric R. Scott
-      orcid: 0000-0002-7430-7879
+  - name: Dave Moore
+  - name: Eric R. Scott
+    orcid: 0000-0002-7430-7879
 format:
   html:
     toc: true
@@ -17,7 +18,7 @@ execute:
   message: true
 params:
   save_figs: false
-  use_terra: true           
+  use_terra: true
   data_dir_amf: "data/FLUXNET/AMF"
   data_dir_icos: "data/FLUXNET/ICOS"
   worldclim_rds: "data/wc_worldclim_30s.rds"
@@ -39,7 +40,17 @@ library(stringr)
 library(units)
 library(ggnewscale)
 
+# Extra packages needed for Eric's maps
+suppressPackageStartupMessages({
+  library(sf)
+  library(ggtext)
+  library(patchwork)
+  library(colorspace)
+  library(cols4all)
+  library(rnaturalearth)
+})
 
+set.seed(123)
 
 if (!params$use_terra) {
   suppressPackageStartupMessages(library(raster))
@@ -50,12 +61,6 @@ if (!params$use_terra) {
 library(plotbiomes)
 
 # Prevent namespace conflicts with 'raster'
-select <- dplyr::select
-filter <- dplyr::filter
-lag    <- dplyr::lag
-
-# --- Prevent namespace conflicts (e.g., raster::select vs dplyr::select) ---
-# Make dplyr verbs explicit so helpers that use unqualified calls get the right ones.
 select <- dplyr::select
 filter <- dplyr::filter
 lag    <- dplyr::lag
@@ -117,7 +122,212 @@ annual_data <- manifest %>%
   dplyr::mutate(across(where(is.numeric), ~na_if(.x, -9999))) %>%
   dplyr::mutate(year = as.integer(TIMESTAMP), .before = TIMESTAMP) %>%
   dplyr::left_join(md_join, by = "site")
+
 unique(annual_data$site)
+```
+
+# Global maps (Eric)
+
+```{r}
+#| label: eric-standardize-vars
+# Standardize flux column names to a common set so the map code is agnostic
+pick_first <- function(cands, nms) {
+  hit <- cands[cands %in% nms]
+  if (length(hit) == 0) NA_character_ else hit[1]
+}
+
+nm <- names(annual_data)
+col_NEE  <- pick_first(c("NEE_VUT_MEAN",   "NEE_VUT_REF"),    nm)
+col_GPP  <- pick_first(c("GPP_NT_VUT_MEAN","GPP_NT_VUT_REF"), nm)
+col_RECO <- pick_first(c("RECO_NT_VUT_MEAN","RECO_NT_VUT_REF"), nm)
+
+missing <- c(
+  if (is.na(col_NEE))  "NEE (VUT_MEAN or VUT_REF)"  else NULL,
+  if (is.na(col_GPP))  "GPP (NT_VUT_MEAN or NT_VUT_REF)" else NULL,
+  if (is.na(col_RECO)) "RECO (NT_VUT_MEAN or NT_VUT_REF)" else NULL
+)
+if (length(missing) > 0) {
+  stop("Missing required flux columns in annual_data: ", paste(missing, collapse = ", "))
+}
+
+annual_std <- annual_data %>%
+  dplyr::rename(
+    NEE_VUT_MEAN     = dplyr::all_of(col_NEE),
+    GPP_NT_VUT_MEAN  = dplyr::all_of(col_GPP),
+    RECO_NT_VUT_MEAN = dplyr::all_of(col_RECO)
+  )
+
+vars_of_interest <- c("GPP_NT_VUT_MEAN","NEE_VUT_MEAN","RECO_NT_VUT_MEAN")
+```
+
+## Site map by record length
+
+```{r}
+#| label: eric-site-map
+#| fig-cap: "Sites colored by number of years of data; main panel plus focus on Europe and North America."
+#| fig-width: 10
+#| fig-height: 8
+
+world <- rnaturalearth::ne_countries(scale = "medium", returnclass = "sf") |>
+  dplyr::filter(continent != "Antarctica")
+
+site_yrs <- annual_std |>
+  dplyr::group_by(site) |>
+  dplyr::summarize(n_yrs = dplyr::n_distinct(year), .groups = "drop") |>
+  dplyr::left_join(metadata, dplyr::join_by(site)) |>
+  dplyr::filter(!is.na(LOCATION_LONG), !is.na(LOCATION_LAT)) |>
+  sf::st_as_sf(coords = c("LOCATION_LONG","LOCATION_LAT"), crs = 4326)
+
+# BBoxes from sites (avoid typos like 'Portugul')
+bbox_na <- site_yrs |>
+  dplyr::filter(COUNTRY %in% c("USA","United States of America","Canada","Mexico","Panama","Costa Rica")) |>
+  sf::st_bbox()
+
+bbox_eu <- site_yrs |>
+  dplyr::filter(COUNTRY %in% c(
+    "Belgium","Switzerland","Czechia","Germany","Denmark","Spain","Finland",
+    "France","Italy","Netherlands","Norway","Portugal","Sweden","United Kingdom",
+    "UK","Ireland","Austria","Poland"
+  )) |>
+  sf::st_bbox()
+
+base <- ggplot() +
+  geom_sf(data = world, fill = "white") +
+  geom_sf(data = site_yrs, aes(color = n_yrs), size = 0.5) +
+  scale_color_continuous_sequential(palette = "Viridis", rev = FALSE, end = 0.9) +
+  theme_void() +
+  theme(panel.background = element_rect(fill = "lightblue", color = "black"))
+
+p_world <- base + coord_sf(expand = FALSE)
+p_na    <- base + coord_sf(xlim = c(bbox_na["xmin"], bbox_na["xmax"]),
+                           ylim = c(bbox_na["ymin"], bbox_na["ymax"]))
+p_eu    <- base + coord_sf(xlim = c(bbox_eu["xmin"], bbox_eu["xmax"]),
+                           ylim = c(bbox_eu["ymin"], bbox_eu["ymax"]))
+
+p_site_years <- p_world / (p_eu | p_na) +
+  patchwork::plot_layout(widths = c(1, 0.4, 0.6), guides = "collect") &
+  labs(color = "# yrs")
+
+save_if(p_site_years, "eric_n_yrs_site_map", width = 10, height = 8)
+p_site_years
+```
+
+## Site map by IGBP
+
+```{r}
+#| label: eric-site-map-igbp
+#| fig-cap: "Sites colored by IGBP class; main panel plus focus on Europe and North America."
+#| fig-width: 10
+#| fig-height: 8
+
+metadata_sf <- metadata |>
+  dplyr::filter(!is.na(LOCATION_LONG), !is.na(LOCATION_LAT)) |>
+  sf::st_as_sf(coords = c("LOCATION_LONG","LOCATION_LAT"), crs = 4326)
+
+base2 <- ggplot() +
+  geom_sf(data = world, fill = "white") +
+  geom_sf(data = metadata_sf, aes(color = IGBP), size = 0.5, key_glyph = "rect") +
+  scale_color_discrete_qualitative() +
+  theme_void() +
+  theme(panel.background = element_rect(fill = "lightblue", color = "black"))
+
+p_world2 <- base2 + coord_sf(expand = FALSE)
+p_na2    <- base2 + coord_sf(xlim = c(bbox_na["xmin"], bbox_na["xmax"]),
+                             ylim = c(bbox_na["ymin"], bbox_na["ymax"]))
+p_eu2    <- base2 + coord_sf(xlim = c(bbox_eu["xmin"], bbox_eu["xmax"]),
+                             ylim = c(bbox_eu["ymin"], bbox_eu["ymax"]))
+
+p_igbp <- p_world2 / (p_eu2 | p_na2) +
+  patchwork::plot_layout(widths = c(1, 0.4, 0.6), guides = "collect") &
+  labs(color = "IGBP")
+
+save_if(p_igbp, "eric_igbp_site_map", width = 10, height = 8)
+p_igbp
+```
+
+## Current vs historical flux maps
+
+```{r}
+#| label: eric-flux-map-build
+#| message: false
+#| warning: false
+
+annual_hist <- annual_std |>
+  dplyr::select(site, year, dplyr::all_of(vars_of_interest)) |>
+  dplyr::filter(year < max(year, na.rm = TRUE)) |>
+  dplyr::summarize(dplyr::across(dplyr::all_of(vars_of_interest), ~mean(.x, na.rm = TRUE)),
+                   .by = site)
+
+annual_curr <- annual_std |>
+  dplyr::select(site, year, dplyr::all_of(vars_of_interest)) |>
+  dplyr::filter(year == max(year, na.rm = TRUE)) |>
+  dplyr::summarize(dplyr::across(dplyr::all_of(vars_of_interest), ~mean(.x, na.rm = TRUE)),
+                   .by = site)
+
+plot_df <- dplyr::bind_rows(
+  dplyr::mutate(annual_hist, period = "hist"),
+  dplyr::mutate(annual_curr, period = "curr")
+) |>
+  tidyr::pivot_longer(c(-site, -period)) |>
+  tidyr::pivot_wider(names_from = period, values_from = value) |>
+  dplyr::mutate(diff = curr - hist) |>
+  tidyr::pivot_wider(names_from = name, values_from = c(hist, curr, diff)) |>
+  dplyr::left_join(metadata |> dplyr::select(site, LOCATION_LAT, LOCATION_LONG), dplyr::join_by(site)) |>
+  dplyr::filter(is.finite(LOCATION_LONG), is.finite(LOCATION_LAT)) |>
+  sf::st_as_sf(coords = c("LOCATION_LONG","LOCATION_LAT"), crs = 4326)
+
+make_pair <- function(var){
+  lab <- stringr::str_extract(var, "GPP|NEE|RECO")
+  var_hist <- paste0("hist_", var)
+  var_diff <- paste0("diff_", var)
+
+  p1 <- plot_df |>
+    dplyr::filter(dplyr::if_all(dplyr::all_of(var_hist), is.finite)) |>
+    ggplot() +
+    geom_sf(data = world, fill = "white") +
+    geom_sf(aes(color = .data[[var_hist]]), size = 0.4, na.rm = TRUE) +
+    labs(color = paste0(lab, " gC m<sup>-2</sup> y<sup>-1</sup>")) +
+    coord_sf(expand = FALSE) +
+    theme_void() +
+    theme(legend.title = ggtext::element_markdown(),
+          legend.position = "bottom",
+          legend.key.width = grid::unit(1, "null"),
+          panel.background = element_rect(fill = "lightblue", color = "black"))
+
+  if (lab == "NEE") {
+    p1 <- p1 + cols4all::scale_color_continuous_c4a_div("met.troy")
+  } else {
+    p1 <- p1 + scale_color_continuous_sequential(palette = "Viridis")
+  }
+
+  p2 <- plot_df |>
+    dplyr::filter(dplyr::if_all(dplyr::all_of(var_diff), is.finite)) |>
+    ggplot() +
+    geom_sf(data = world, fill = "white") +
+    geom_sf(aes(color = .data[[var_diff]]), size = 0.4, na.rm = TRUE) +
+    scale_color_continuous_diverging() +
+    labs(color = paste0(lab, " gC m<sup>-2</sup> y<sup>-1</sup>")) +
+    coord_sf(expand = FALSE) +
+    theme_void() +
+    theme(legend.title = ggtext::element_markdown(),
+          legend.position = "bottom",
+          legend.key.width = grid::unit(1, "null"),
+          panel.background = element_rect(fill = "lightblue", color = "black"))
+
+  p1 | p2
+}
+
+p_list <- lapply(vars_of_interest, make_pair)
+p_fluxmaps <- patchwork::wrap_plots(p_list, ncol = 1) + patchwork::plot_annotation(tag_levels = "a")
+```
+
+```{r}
+#| label: eric-flux-map-fig
+#| fig-cap: "Fluxes averaged over all prior years (left in each row) and the current year minus prior mean (right)."
+#| fig-width: 10
+#| fig-height: 8
+save_if(p_fluxmaps, "eric_flux_maps", width = 10, height = 8)
+p_fluxmaps
 ```
 
 # IGBP aggregated flux summaries
