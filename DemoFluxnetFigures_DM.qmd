@@ -111,12 +111,40 @@ manifest %>% dplyr::count(dataset, time_integral)
 ```{r}
 #| label: annual-data
 
-annual_data <- manifest %>%
-  dplyr::filter(time_integral == "YY", dataset == "FULLSET") %>%
-  load_fluxnet_data() %>%
-  dplyr::mutate(across(where(is.numeric), ~na_if(.x, -9999))) %>%
-  dplyr::mutate(year = as.integer(TIMESTAMP), .before = TIMESTAMP) %>%
+# user-tunable knobs
+qc_gate_var        <- "NEE_VUT_REF"  # e.g., "NEE_VUT_REF", "GPP_NT_VUT_REF", "LE_F", etc.
+max_gapfilled_bad  <- 0.70           # >70% filled => bad
+drop_if_qc_missing <- TRUE           # if QC missing at YY, drop the record
+
+annual_data <-
+  manifest |>
+  dplyr::filter(time_integral == "YY", dataset == "FULLSET") |>
+  load_fluxnet_data() |>
+  dplyr::mutate(dplyr::across(where(is.numeric), ~na_if(.x, -9999))) |>
+  dplyr::mutate(year = as.integer(TIMESTAMP), .before = TIMESTAMP) |>
+  # adjust join key to your actual column names
   dplyr::left_join(md_join, by = "site")
+
+# Gate by percent gap-filled (expects helper to create `is_bad`)
+annual_flagged <- annual_data |>
+  flag_bad_gapfilled(
+    gate_var        = qc_gate_var,
+    max_gapfilled   = max_gapfilled_bad,
+    drop_if_missing = drop_if_qc_missing
+  )
+
+# keep the good stuff
+annual_data <- annual_flagged |>
+  dplyr::filter(!is_bad)
+
+# user-facing message
+cat(sprintf(
+  "Using '%s' as the QC variable. Records with > %.0f%% gap-filled data are flagged BAD. Drop if QC missing: %s\n",
+  qc_gate_var,
+  max_gapfilled_bad * 100,
+  ifelse(drop_if_qc_missing, "YES", "NO")
+))
+
 unique(annual_data$site)
 ```
 
