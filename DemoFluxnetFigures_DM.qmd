@@ -1,6 +1,9 @@
 ---
 title: "FLUXNET Demo Plots"
-author: "Moore Lab (SNRE, UA)"
+authors:
+    - name: Dave Moore
+    - name: Eric R. Scott
+      orcid: 0000-0002-7430-7879
 format:
   html:
     toc: true
@@ -114,8 +117,7 @@ annual_data <- manifest %>%
   dplyr::mutate(across(where(is.numeric), ~na_if(.x, -9999))) %>%
   dplyr::mutate(year = as.integer(TIMESTAMP), .before = TIMESTAMP) %>%
   dplyr::left_join(md_join, by = "site")
-
-glimpse(annual_data)
+unique(annual_data$site)
 ```
 
 # IGBP aggregated flux summaries
