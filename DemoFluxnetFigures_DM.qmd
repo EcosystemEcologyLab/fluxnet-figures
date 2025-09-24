@@ -331,14 +331,14 @@ save_if(p_wc_map, "wc_vs_site_map")
 
 ```{r}
 #| label: whittaker
-
 data("Whittaker_biomes", package = "plotbiomes")
 
-my_15_colors <- c(
-  "#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e",
-  "#e6ab02", "#a6761d", "#666666", "#1f78b4", "#b2df8a",
-  "#fb9a99", "#fdbf6f", "#cab2d6", "#ffff99", "#8dd3c7"
-)
+# There are more than 15 IGBP codes!
+# my_15_colors <- c(
+#   "#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e",
+#   "#e6ab02", "#a6761d", "#666666", "#1f78b4", "#b2df8a",
+#   "#fb9a99", "#fdbf6f", "#cab2d6", "#ffff99", "#8dd3c7"
+# )
 
 p_whittaker <- ggplot() +
   geom_polygon(
@@ -347,15 +347,17 @@ p_whittaker <- ggplot() +
     color = "grey80", alpha = 0.4
   ) +
   scale_fill_brewer(palette = "BrBG", name = "Biome") +
-  ggnewscale::new_scale_fill() +
   geom_point(
     data = climate_summary,
     aes(x = MAT_WorldClim_C, y = MAP_WorldClim_cm, color = IGBP),
     size = 2.8, alpha = 0.9
-  ) +
-  scale_color_manual(values = my_15_colors, drop = FALSE, name = "IGBP") +
-  labs(x = "Temperature (°C)", y = "Precipitation (cm yr\u207B\u00B9)") +
-  theme_classic()
+  ) + 
+  # scale_color_manual(values = my_15_colors, drop = FALSE, name = "IGBP") +
+  scale_color_discrete() +
+  guides(col = guide_legend(ncol = 3)) +
+  labs(x = "Temperature (°C)", y = latex2exp::TeX("Precipitation ($cm\\ yr^{-1}$)")) +
+  theme_classic() +
+  theme(legend.margin = margin(1,1,1,1))
 save_if(p_whittaker, "whittaker_igbp")
 
 p_whittaker_nee <- ggplot() +
@@ -378,7 +380,8 @@ p_whittaker_nee <- ggplot() +
     name = "NEE Sign"
   ) +
   scale_size_continuous(name = "|NEE|", range = c(1, 8)) +
-  labs(x = "Temperature (°C)", y = "Precipitation (cm yr\u207B\u00B9)") +
-  theme_classic()
+  labs(x = "Temperature (°C)", y = latex2exp::TeX("Precipitation ($cm\\ yr^{-1}$)")) +
+  theme_classic() +
+  theme(legend.margin = margin(1,1,1,1))
 save_if(p_whittaker_nee, "whittaker_nee")
 ```
