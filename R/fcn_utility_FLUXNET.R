@@ -561,6 +561,28 @@ load_fluxnet_metadata <- function() {
     mutate(SITEID = SITE_ID)
 }
 
+#.QA QC filters
+# helper that adds pct_gapfilled + is_bad, based on the YY QC column for the chosen var
+#
+
+flag_bad_gapfilled <- function(df, gate_var, max_gapfilled = 0.5, drop_if_missing = TRUE) {
+  qc_col <- paste0(gate_var, "_QC")
+  if (!qc_col %in% names(df)) {
+    warning(sprintf("QC column `%s` not found. No filtering applied.", qc_col))
+    df$pct_gapfilled <- NA_real_
+    df$is_bad <- if (drop_if_missing) TRUE else FALSE
+    return(df)
+  }
+  pg <- df[[qc_col]]                        # fraction "good" at YY (0..1)
+  df$pct_gapfilled <- pmax(0, pmin(1, 1 - pg))  # clamp just in case
+  df$is_bad <- ifelse(
+    is.na(df$pct_gapfilled),
+    drop_if_missing,                        # drop if we can't assess quality
+    df$pct_gapfilled > max_gapfilled
+  )
+  df
+}
+
 
 # ------------------------
 # Data Loaders
