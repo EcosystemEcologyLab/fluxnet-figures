@@ -316,61 +316,90 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>annual_data <span class="ot">&lt;-</span> manifest <span class="sc">%&gt;%</span></span>
-<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">filter</span>(time_integral <span class="sc">==</span> <span class="st">"YY"</span>, dataset <span class="sc">==</span> <span class="st">"FULLSET"</span>) <span class="sc">%&gt;%</span></span>
-<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">load_fluxnet_data</span>() <span class="sc">%&gt;%</span></span>
-<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">mutate</span>(<span class="fu">across</span>(<span class="fu">where</span>(is.numeric), <span class="sc">~</span><span class="fu">na_if</span>(.x, <span class="sc">-</span><span class="dv">9999</span>))) <span class="sc">%&gt;%</span></span>
-<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">mutate</span>(<span class="at">year =</span> <span class="fu">as.integer</span>(TIMESTAMP), <span class="at">.before =</span> TIMESTAMP) <span class="sc">%&gt;%</span></span>
-<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">left_join</span>(md_join, <span class="at">by =</span> <span class="st">"site"</span>)</span>
-<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a><span class="fu">unique</span>(annual_data<span class="sc">$</span>site)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co"># user-tunable knobs</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>qc_gate_var        <span class="ot">&lt;-</span> <span class="st">"NEE_VUT_REF"</span>  <span class="co"># e.g., "NEE_VUT_REF", "GPP_NT_VUT_REF", "LE_F", etc.</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>max_gapfilled_bad  <span class="ot">&lt;-</span> <span class="fl">0.70</span>           <span class="co"># &gt;70% filled =&gt; bad</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>drop_if_qc_missing <span class="ot">&lt;-</span> <span class="cn">TRUE</span>           <span class="co"># if QC missing at YY, drop the record</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>annual_data <span class="ot">&lt;-</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>  manifest <span class="sc">|&gt;</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">filter</span>(time_integral <span class="sc">==</span> <span class="st">"YY"</span>, dataset <span class="sc">==</span> <span class="st">"FULLSET"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">load_fluxnet_data</span>() <span class="sc">|&gt;</span></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">mutate</span>(dplyr<span class="sc">::</span><span class="fu">across</span>(<span class="fu">where</span>(is.numeric), <span class="sc">~</span><span class="fu">na_if</span>(.x, <span class="sc">-</span><span class="dv">9999</span>))) <span class="sc">|&gt;</span></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">mutate</span>(<span class="at">year =</span> <span class="fu">as.integer</span>(TIMESTAMP), <span class="at">.before =</span> TIMESTAMP) <span class="sc">|&gt;</span></span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>  <span class="co"># adjust join key to your actual column names</span></span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">left_join</span>(md_join, <span class="at">by =</span> <span class="st">"site"</span>)</span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a><span class="co"># Gate by percent gap-filled (expects helper to create `is_bad`)</span></span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a>annual_flagged <span class="ot">&lt;-</span> annual_data <span class="sc">|&gt;</span></span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">flag_bad_gapfilled</span>(</span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">gate_var        =</span> qc_gate_var,</span>
+<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a>    <span class="at">max_gapfilled   =</span> max_gapfilled_bad,</span>
+<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a>    <span class="at">drop_if_missing =</span> drop_if_qc_missing</span>
+<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb9-22"><a href="#cb9-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-23"><a href="#cb9-23" aria-hidden="true" tabindex="-1"></a><span class="co"># keep the good stuff</span></span>
+<span id="cb9-24"><a href="#cb9-24" aria-hidden="true" tabindex="-1"></a>annual_data <span class="ot">&lt;-</span> annual_flagged <span class="sc">|&gt;</span></span>
+<span id="cb9-25"><a href="#cb9-25" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">filter</span>(<span class="sc">!</span>is_bad)</span>
+<span id="cb9-26"><a href="#cb9-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-27"><a href="#cb9-27" aria-hidden="true" tabindex="-1"></a><span class="co"># user-facing message</span></span>
+<span id="cb9-28"><a href="#cb9-28" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(</span>
+<span id="cb9-29"><a href="#cb9-29" aria-hidden="true" tabindex="-1"></a>  <span class="st">"Using '%s' as the QC variable. Records with &gt; %.0f%% gap-filled data are flagged BAD. Drop if QC missing: %s</span><span class="sc">\n</span><span class="st">"</span>,</span>
+<span id="cb9-30"><a href="#cb9-30" aria-hidden="true" tabindex="-1"></a>  qc_gate_var,</span>
+<span id="cb9-31"><a href="#cb9-31" aria-hidden="true" tabindex="-1"></a>  max_gapfilled_bad <span class="sc">*</span> <span class="dv">100</span>,</span>
+<span id="cb9-32"><a href="#cb9-32" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ifelse</span>(drop_if_qc_missing, <span class="st">"YES"</span>, <span class="st">"NO"</span>)</span>
+<span id="cb9-33"><a href="#cb9-33" aria-hidden="true" tabindex="-1"></a>))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output cell-output-stdout">
-<pre><code>  [1] "AR-Bal" "AR-CCa" "AR-CCg" "AR-TF1" "AR-TF2" "BR-CST" "BR-Npw" "CA-ARB"
-  [9] "CA-ARF" "CA-BOU" "CA-Gro" "CA-HPC" "CA-LP1" "CA-MA1" "CA-MA2" "CA-MA3"
- [17] "CA-Man" "CA-NS1" "CA-NS2" "CA-NS3" "CA-NS4" "CA-NS5" "CA-NS6" "CA-NS7"
- [25] "CA-Qc2" "CA-Qfo" "CA-SCB" "CA-SCC" "CA-SF1" "CA-SF2" "CA-SMC" "MX-Tes"
- [33] "US-A32" "US-A74" "US-ALQ" "US-AR1" "US-AR2" "US-ARM" "US-ARb" "US-ARc"
- [41] "US-ASH" "US-ASM" "US-Akn" "US-BRG" "US-BZB" "US-BZF" "US-BZS" "US-BZo"
- [49] "US-Bar" "US-Bi1" "US-Bi2" "US-CAK" "US-CF1" "US-CF2" "US-CF3" "US-CF4"
- [57] "US-CGG" "US-CRK" "US-CRT" "US-CS1" "US-CS2" "US-CS3" "US-CS4" "US-CS5"
- [65] "US-CS6" "US-CS8" "US-CdM" "US-Cms" "US-Cop" "US-Cst" "US-DFC" "US-DFK"
- [73] "US-DPW" "US-DS1" "US-DS2" "US-DS3" "US-Dmg" "US-EA5" "US-EA6" "US-EDN"
- [81] "US-EML" "US-Elm" "US-Esm" "US-EvM" "US-Fcr" "US-Fmf" "US-Fuf" "US-Fwf"
- [89] "US-GLE" "US-HB1" "US-HB2" "US-HB3" "US-HB4" "US-HVs" "US-HWB" "US-Ha1"
- [97] "US-Hn2" "US-Hn3" "US-Ho2" "US-Hsm" "US-ICh" "US-ICs" "US-ICt" "US-Jo1"
-[105] "US-Jo2" "US-KFS" "US-KLS" "US-KPL" "US-KS1" "US-KS2" "US-KS3" "US-Kon"
-[113] "US-LA3" "US-LS2" "US-Lin" "US-MMS" "US-MOz" "US-Me1" "US-Me2" "US-Me3"
-[121] "US-Me6" "US-Mo1" "US-Mo2" "US-Mo3" "US-Mpj" "US-Myb" "US-NC1" "US-NGC"
-[129] "US-Ne1" "US-ONA" "US-ORv" "US-OWC" "US-Oho" "US-PAS" "US-PFL" "US-PFb"
-[137] "US-PFc" "US-PFd" "US-PFe" "US-PFg" "US-PFh" "US-PFi" "US-PFj" "US-PFk"
-[145] "US-PFm" "US-PFn" "US-PFp" "US-PFq" "US-PFr" "US-PFt" "US-PSH" "US-PSL"
-[153] "US-Pnp" "US-Prr" "US-RGA" "US-RGB" "US-RGF" "US-RGW" "US-RGo" "US-RRC"
-[161] "US-Rms" "US-Ro1" "US-Ro2" "US-Ro3" "US-Ro4" "US-Ro5" "US-Ro6" "US-Rwe"
-[169] "US-Rwf" "US-Rws" "US-SP1" "US-SRC" "US-SRG" "US-SRM" "US-SRS" "US-SSH"
-[177] "US-Sag" "US-Seg" "US-Ses" "US-Sne" "US-Snf" "US-Srr" "US-StJ" "US-Tw1"
-[185] "US-Tw3" "US-Tw4" "US-UC1" "US-UC2" "US-UM3" "US-UTB" "US-Var" "US-Vcm"
-[193] "US-Vcp" "US-WPT" "US-Whs" "US-Wi0" "US-Wi1" "US-Wi3" "US-Wi4" "US-Wi5"
-[201] "US-Wi6" "US-Wi7" "US-Wi8" "US-Wi9" "US-Wjs" "US-Wkg" "US-YK2" "US-xAB"
-[209] "US-xAE" "US-xBA" "US-xBL" "US-xBN" "US-xBR" "US-xCL" "US-xCP" "US-xDC"
-[217] "US-xDJ" "US-xDL" "US-xDS" "US-xGR" "US-xHA" "US-xHE" "US-xJE" "US-xJR"
-[225] "US-xKA" "US-xKZ" "US-xMB" "US-xML" "US-xNG" "US-xNQ" "US-xRM" "US-xSB"
-[233] "US-xSC" "US-xSE" "US-xSJ" "US-xSL" "US-xSR" "US-xST" "US-xTA" "US-xTL"
-[241] "US-xTR" "US-xUK" "US-xUN" "US-xWD" "US-xYE" "AR-SLu" "AR-Vir" "AT-Neu"
-[249] "AU-ASM" "AU-Ade" "AU-Cpr" "AU-Cum" "AU-DaP" "AU-DaS" "AU-Dry" "AU-Emr"
-[257] "AU-Fog" "AU-GWW" "AU-Gin" "AU-How" "AU-Lox" "AU-RDF" "AU-Rig" "AU-Rob"
-[265] "AU-Stp" "AU-TTE" "AU-Tum" "AU-Wac" "AU-Whr" "AU-Wom" "BE-Bra" "BE-Lon"
-[273] "BE-Vie" "BR-Sa1" "BR-Sa3" "CA-SF3" "CA-TP1" "CA-TP2" "CA-TP3" "CA-TP4"
-[281] "CA-TPD" "CG-Tch" "CH-Cha" "CH-Dav" "CH-Fru" "CH-Oe2" "CN-Dan" "CN-Du2"
-[289] "CN-Ha2" "CN-HaM" "CN-Qia" "CZ-BK1" "CZ-BK2" "CZ-wet" "DE-Akm" "DE-Geb"
-[297] "DE-Gri" "DE-Hai" "DE-Kli" "DE-Lkb" "DE-Obe" "DE-RuS" "DE-Seh" "DE-SfN"
-[305] "DE-Tha" "DE-Zrk" "DK-Eng" "DK-Fou" "DK-Sor" "ES-Amo" "ES-LgS" "FI-Hyy"
-[313] "FI-Jok" "FI-Let" "FI-Sod" "GF-Guy" "GH-Ank" "GL-NuF" "GL-ZaH" "IT-Col"
-[321] "IT-Cp2" "IT-Isp" "IT-La2" "IT-Lav" "IT-Ren" "IT-Ro1" "IT-Ro2" "IT-SR2"
-[329] "IT-SRo" "IT-Tor" "JP-MBF" "PA-SPn" "RU-Che" "RU-Cok" "RU-Ha1" "SD-Dem"
-[337] "SJ-Adv" "US-Blo" "US-GBT" "US-Goo" "US-IB2" "US-LWW" "US-Me4" "US-Me5"
-[345] "US-NR1" "US-Ne3" "US-Sta" "US-Syv" "US-Ton" "US-Tw2" "US-Twt" "US-UMB"
-[353] "US-UMd" "US-WCr" "US-Wi2" "ZM-Mon"</code></pre>
+<pre><code>Using 'NEE_VUT_REF' as the QC variable. Records with &gt; 70% gap-filled data are flagged BAD. Drop if QC missing: YES</code></pre>
+</div>
+<details class="code-fold">
+<summary>Code</summary>
+<div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="fu">unique</span>(annual_data<span class="sc">$</span>site)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>  [1] "AR-CCa" "AR-CCg" "AR-TF1" "AR-TF2" "BR-CST" "BR-Npw" "CA-ARB" "CA-ARF"
+  [9] "CA-BOU" "CA-Gro" "CA-HPC" "CA-LP1" "CA-MA1" "CA-MA2" "CA-MA3" "CA-Man"
+ [17] "CA-NS1" "CA-NS2" "CA-NS3" "CA-NS4" "CA-NS5" "CA-NS6" "CA-NS7" "CA-Qc2"
+ [25] "CA-Qfo" "CA-SCB" "CA-SCC" "CA-SF1" "CA-SF2" "CA-SMC" "MX-Tes" "US-A32"
+ [33] "US-A74" "US-ALQ" "US-AR1" "US-AR2" "US-ARM" "US-ARb" "US-ARc" "US-Akn"
+ [41] "US-BRG" "US-BZB" "US-BZF" "US-BZS" "US-BZo" "US-Bar" "US-Bi1" "US-Bi2"
+ [49] "US-CF1" "US-CF2" "US-CF3" "US-CF4" "US-CGG" "US-CRK" "US-CRT" "US-CS1"
+ [57] "US-CS2" "US-CS3" "US-CS4" "US-CS5" "US-CS6" "US-CS8" "US-CdM" "US-Cms"
+ [65] "US-Cop" "US-Cst" "US-DFC" "US-DFK" "US-DPW" "US-DS1" "US-DS2" "US-DS3"
+ [73] "US-Dmg" "US-EA5" "US-EA6" "US-EDN" "US-EML" "US-Elm" "US-Esm" "US-EvM"
+ [81] "US-Fcr" "US-Fmf" "US-Fuf" "US-Fwf" "US-GLE" "US-HB1" "US-HB2" "US-HB3"
+ [89] "US-HB4" "US-HWB" "US-Ha1" "US-Hn2" "US-Hn3" "US-Ho2" "US-Hsm" "US-ICh"
+ [97] "US-ICs" "US-ICt" "US-Jo1" "US-Jo2" "US-KFS" "US-KLS" "US-KPL" "US-KS1"
+[105] "US-KS2" "US-KS3" "US-Kon" "US-LA3" "US-LS2" "US-Lin" "US-MMS" "US-MOz"
+[113] "US-Me1" "US-Me2" "US-Me3" "US-Me6" "US-Mo1" "US-Mo2" "US-Mo3" "US-Mpj"
+[121] "US-Myb" "US-NC1" "US-NGC" "US-Ne1" "US-ONA" "US-ORv" "US-OWC" "US-Oho"
+[129] "US-PAS" "US-Pnp" "US-Prr" "US-RGA" "US-RGB" "US-RGF" "US-RGW" "US-RGo"
+[137] "US-RRC" "US-Rms" "US-Ro1" "US-Ro2" "US-Ro3" "US-Ro4" "US-Ro5" "US-Ro6"
+[145] "US-Rwe" "US-Rwf" "US-Rws" "US-SP1" "US-SRC" "US-SRG" "US-SRM" "US-SRS"
+[153] "US-SSH" "US-Seg" "US-Ses" "US-Sne" "US-Snf" "US-Srr" "US-StJ" "US-Tw1"
+[161] "US-Tw3" "US-Tw4" "US-UC1" "US-UC2" "US-UTB" "US-Var" "US-Vcm" "US-Vcp"
+[169] "US-WPT" "US-Whs" "US-Wi0" "US-Wi1" "US-Wi3" "US-Wi4" "US-Wi5" "US-Wi6"
+[177] "US-Wi7" "US-Wi8" "US-Wi9" "US-Wjs" "US-Wkg" "US-YK2" "US-xAB" "US-xAE"
+[185] "US-xBA" "US-xBL" "US-xBN" "US-xBR" "US-xCL" "US-xCP" "US-xDC" "US-xDJ"
+[193] "US-xDL" "US-xDS" "US-xGR" "US-xHA" "US-xHE" "US-xJE" "US-xJR" "US-xKA"
+[201] "US-xKZ" "US-xMB" "US-xML" "US-xNG" "US-xNQ" "US-xRM" "US-xSB" "US-xSC"
+[209] "US-xSE" "US-xSJ" "US-xSL" "US-xSR" "US-xST" "US-xTA" "US-xTL" "US-xTR"
+[217] "US-xUK" "US-xUN" "US-xWD" "US-xYE" "AR-SLu" "AR-Vir" "AT-Neu" "AU-ASM"
+[225] "AU-Ade" "AU-Cpr" "AU-Cum" "AU-DaP" "AU-DaS" "AU-Dry" "AU-Emr" "AU-Fog"
+[233] "AU-GWW" "AU-Gin" "AU-How" "AU-Lox" "AU-RDF" "AU-Rig" "AU-Rob" "AU-Stp"
+[241] "AU-TTE" "AU-Tum" "AU-Wac" "AU-Whr" "AU-Wom" "BE-Bra" "BE-Lon" "BE-Vie"
+[249] "BR-Sa1" "BR-Sa3" "CA-SF3" "CA-TP1" "CA-TP2" "CA-TP3" "CA-TP4" "CA-TPD"
+[257] "CG-Tch" "CH-Cha" "CH-Dav" "CH-Fru" "CH-Oe2" "CN-Dan" "CN-Du2" "CN-Ha2"
+[265] "CN-HaM" "CN-Qia" "CZ-BK1" "CZ-BK2" "CZ-wet" "DE-Akm" "DE-Geb" "DE-Gri"
+[273] "DE-Hai" "DE-Kli" "DE-Lkb" "DE-Obe" "DE-RuS" "DE-Seh" "DE-SfN" "DE-Tha"
+[281] "DE-Zrk" "DK-Eng" "DK-Fou" "DK-Sor" "ES-Amo" "ES-LgS" "FI-Hyy" "FI-Jok"
+[289] "FI-Let" "FI-Sod" "GF-Guy" "GH-Ank" "GL-NuF" "GL-ZaH" "IT-Col" "IT-Cp2"
+[297] "IT-Isp" "IT-La2" "IT-Lav" "IT-Ren" "IT-Ro1" "IT-Ro2" "IT-SR2" "IT-SRo"
+[305] "IT-Tor" "JP-MBF" "PA-SPn" "RU-Che" "RU-Cok" "RU-Ha1" "SD-Dem" "SJ-Adv"
+[313] "US-Blo" "US-GBT" "US-Goo" "US-IB2" "US-LWW" "US-Me4" "US-Me5" "US-NR1"
+[321] "US-Ne3" "US-Sta" "US-Syv" "US-Ton" "US-Tw2" "US-Twt" "US-UMB" "US-UMd"
+[329] "US-WCr" "US-Wi2" "ZM-Mon"</code></pre>
 </div>
 </div>
 </section>
@@ -379,34 +408,34 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Standardize flux column names to a common set so the map code is agnostic</span></span>
-<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>pick_first <span class="ot">&lt;-</span> <span class="cf">function</span>(cands, nms) {</span>
-<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>  hit <span class="ot">&lt;-</span> cands[cands <span class="sc">%in%</span> nms]</span>
-<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">length</span>(hit) <span class="sc">==</span> <span class="dv">0</span>) <span class="cn">NA_character_</span> <span class="cf">else</span> hit[<span class="dv">1</span>]</span>
-<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>nm <span class="ot">&lt;-</span> <span class="fu">names</span>(annual_data)</span>
-<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>col_NEE  <span class="ot">&lt;-</span> <span class="fu">pick_first</span>(<span class="fu">c</span>(<span class="st">"NEE_VUT_MEAN"</span>,   <span class="st">"NEE_VUT_REF"</span>),    nm)</span>
-<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>col_GPP  <span class="ot">&lt;-</span> <span class="fu">pick_first</span>(<span class="fu">c</span>(<span class="st">"GPP_NT_VUT_MEAN"</span>,<span class="st">"GPP_NT_VUT_REF"</span>), nm)</span>
-<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>col_RECO <span class="ot">&lt;-</span> <span class="fu">pick_first</span>(<span class="fu">c</span>(<span class="st">"RECO_NT_VUT_MEAN"</span>,<span class="st">"RECO_NT_VUT_REF"</span>), nm)</span>
-<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a>missing <span class="ot">&lt;-</span> <span class="fu">c</span>(</span>
-<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">is.na</span>(col_NEE))  <span class="st">"NEE (VUT_MEAN or VUT_REF)"</span>  <span class="cf">else</span> <span class="cn">NULL</span>,</span>
-<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">is.na</span>(col_GPP))  <span class="st">"GPP (NT_VUT_MEAN or NT_VUT_REF)"</span> <span class="cf">else</span> <span class="cn">NULL</span>,</span>
-<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">is.na</span>(col_RECO)) <span class="st">"RECO (NT_VUT_MEAN or NT_VUT_REF)"</span> <span class="cf">else</span> <span class="cn">NULL</span></span>
-<span id="cb11-16"><a href="#cb11-16" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb11-17"><a href="#cb11-17" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (<span class="fu">length</span>(missing) <span class="sc">&gt;</span> <span class="dv">0</span>) {</span>
-<span id="cb11-18"><a href="#cb11-18" aria-hidden="true" tabindex="-1"></a>  <span class="fu">stop</span>(<span class="st">"Missing required flux columns in annual_data: "</span>, <span class="fu">paste</span>(missing, <span class="at">collapse =</span> <span class="st">", "</span>))</span>
-<span id="cb11-19"><a href="#cb11-19" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb11-20"><a href="#cb11-20" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb11-21"><a href="#cb11-21" aria-hidden="true" tabindex="-1"></a>annual_std <span class="ot">&lt;-</span> annual_data <span class="sc">%&gt;%</span></span>
-<span id="cb11-22"><a href="#cb11-22" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">rename</span>(</span>
-<span id="cb11-23"><a href="#cb11-23" aria-hidden="true" tabindex="-1"></a>    <span class="at">NEE_VUT_MEAN     =</span> dplyr<span class="sc">::</span><span class="fu">all_of</span>(col_NEE),</span>
-<span id="cb11-24"><a href="#cb11-24" aria-hidden="true" tabindex="-1"></a>    <span class="at">GPP_NT_VUT_MEAN  =</span> dplyr<span class="sc">::</span><span class="fu">all_of</span>(col_GPP),</span>
-<span id="cb11-25"><a href="#cb11-25" aria-hidden="true" tabindex="-1"></a>    <span class="at">RECO_NT_VUT_MEAN =</span> dplyr<span class="sc">::</span><span class="fu">all_of</span>(col_RECO)</span>
-<span id="cb11-26"><a href="#cb11-26" aria-hidden="true" tabindex="-1"></a>  )</span>
-<span id="cb11-27"><a href="#cb11-27" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb11-28"><a href="#cb11-28" aria-hidden="true" tabindex="-1"></a>vars_of_interest <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"GPP_NT_VUT_MEAN"</span>,<span class="st">"NEE_VUT_MEAN"</span>,<span class="st">"RECO_NT_VUT_MEAN"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Standardize flux column names to a common set so the map code is agnostic</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>pick_first <span class="ot">&lt;-</span> <span class="cf">function</span>(cands, nms) {</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>  hit <span class="ot">&lt;-</span> cands[cands <span class="sc">%in%</span> nms]</span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">length</span>(hit) <span class="sc">==</span> <span class="dv">0</span>) <span class="cn">NA_character_</span> <span class="cf">else</span> hit[<span class="dv">1</span>]</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>nm <span class="ot">&lt;-</span> <span class="fu">names</span>(annual_data)</span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a>col_NEE  <span class="ot">&lt;-</span> <span class="fu">pick_first</span>(<span class="fu">c</span>(<span class="st">"NEE_VUT_MEAN"</span>,   <span class="st">"NEE_VUT_REF"</span>),    nm)</span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a>col_GPP  <span class="ot">&lt;-</span> <span class="fu">pick_first</span>(<span class="fu">c</span>(<span class="st">"GPP_NT_VUT_MEAN"</span>,<span class="st">"GPP_NT_VUT_REF"</span>), nm)</span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>col_RECO <span class="ot">&lt;-</span> <span class="fu">pick_first</span>(<span class="fu">c</span>(<span class="st">"RECO_NT_VUT_MEAN"</span>,<span class="st">"RECO_NT_VUT_REF"</span>), nm)</span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a>missing <span class="ot">&lt;-</span> <span class="fu">c</span>(</span>
+<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">is.na</span>(col_NEE))  <span class="st">"NEE (VUT_MEAN or VUT_REF)"</span>  <span class="cf">else</span> <span class="cn">NULL</span>,</span>
+<span id="cb13-14"><a href="#cb13-14" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">is.na</span>(col_GPP))  <span class="st">"GPP (NT_VUT_MEAN or NT_VUT_REF)"</span> <span class="cf">else</span> <span class="cn">NULL</span>,</span>
+<span id="cb13-15"><a href="#cb13-15" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">is.na</span>(col_RECO)) <span class="st">"RECO (NT_VUT_MEAN or NT_VUT_REF)"</span> <span class="cf">else</span> <span class="cn">NULL</span></span>
+<span id="cb13-16"><a href="#cb13-16" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb13-17"><a href="#cb13-17" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (<span class="fu">length</span>(missing) <span class="sc">&gt;</span> <span class="dv">0</span>) {</span>
+<span id="cb13-18"><a href="#cb13-18" aria-hidden="true" tabindex="-1"></a>  <span class="fu">stop</span>(<span class="st">"Missing required flux columns in annual_data: "</span>, <span class="fu">paste</span>(missing, <span class="at">collapse =</span> <span class="st">", "</span>))</span>
+<span id="cb13-19"><a href="#cb13-19" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb13-20"><a href="#cb13-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-21"><a href="#cb13-21" aria-hidden="true" tabindex="-1"></a>annual_std <span class="ot">&lt;-</span> annual_data <span class="sc">%&gt;%</span></span>
+<span id="cb13-22"><a href="#cb13-22" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">rename</span>(</span>
+<span id="cb13-23"><a href="#cb13-23" aria-hidden="true" tabindex="-1"></a>    <span class="at">NEE_VUT_MEAN     =</span> dplyr<span class="sc">::</span><span class="fu">all_of</span>(col_NEE),</span>
+<span id="cb13-24"><a href="#cb13-24" aria-hidden="true" tabindex="-1"></a>    <span class="at">GPP_NT_VUT_MEAN  =</span> dplyr<span class="sc">::</span><span class="fu">all_of</span>(col_GPP),</span>
+<span id="cb13-25"><a href="#cb13-25" aria-hidden="true" tabindex="-1"></a>    <span class="at">RECO_NT_VUT_MEAN =</span> dplyr<span class="sc">::</span><span class="fu">all_of</span>(col_RECO)</span>
+<span id="cb13-26"><a href="#cb13-26" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb13-27"><a href="#cb13-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-28"><a href="#cb13-28" aria-hidden="true" tabindex="-1"></a>vars_of_interest <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"GPP_NT_VUT_MEAN"</span>,<span class="st">"NEE_VUT_MEAN"</span>,<span class="st">"RECO_NT_VUT_MEAN"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 </div>
 <section id="site-map-by-record-length" class="level2" data-number="5.1">
@@ -414,47 +443,47 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>world <span class="ot">&lt;-</span> rnaturalearth<span class="sc">::</span><span class="fu">ne_countries</span>(<span class="at">scale =</span> <span class="st">"medium"</span>, <span class="at">returnclass =</span> <span class="st">"sf"</span>) <span class="sc">|&gt;</span></span>
-<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">filter</span>(continent <span class="sc">!=</span> <span class="st">"Antarctica"</span>)</span>
-<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>site_yrs <span class="ot">&lt;-</span> annual_std <span class="sc">|&gt;</span></span>
-<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">group_by</span>(site) <span class="sc">|&gt;</span></span>
-<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">summarize</span>(<span class="at">n_yrs =</span> dplyr<span class="sc">::</span><span class="fu">n_distinct</span>(year), <span class="at">.groups =</span> <span class="st">"drop"</span>) <span class="sc">|&gt;</span></span>
-<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">left_join</span>(metadata, dplyr<span class="sc">::</span><span class="fu">join_by</span>(site)) <span class="sc">|&gt;</span></span>
-<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">filter</span>(<span class="sc">!</span><span class="fu">is.na</span>(LOCATION_LONG), <span class="sc">!</span><span class="fu">is.na</span>(LOCATION_LAT)) <span class="sc">|&gt;</span></span>
-<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>  sf<span class="sc">::</span><span class="fu">st_as_sf</span>(<span class="at">coords =</span> <span class="fu">c</span>(<span class="st">"LOCATION_LONG"</span>,<span class="st">"LOCATION_LAT"</span>), <span class="at">crs =</span> <span class="dv">4326</span>)</span>
-<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a><span class="co"># BBoxes from sites (avoid typos like 'Portugul')</span></span>
-<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a>bbox_na <span class="ot">&lt;-</span> site_yrs <span class="sc">|&gt;</span></span>
-<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">filter</span>(COUNTRY <span class="sc">%in%</span> <span class="fu">c</span>(<span class="st">"USA"</span>,<span class="st">"United States of America"</span>,<span class="st">"Canada"</span>,<span class="st">"Mexico"</span>,<span class="st">"Panama"</span>,<span class="st">"Costa Rica"</span>)) <span class="sc">|&gt;</span></span>
-<span id="cb12-14"><a href="#cb12-14" aria-hidden="true" tabindex="-1"></a>  sf<span class="sc">::</span><span class="fu">st_bbox</span>()</span>
-<span id="cb12-15"><a href="#cb12-15" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-16"><a href="#cb12-16" aria-hidden="true" tabindex="-1"></a>bbox_eu <span class="ot">&lt;-</span> site_yrs <span class="sc">|&gt;</span></span>
-<span id="cb12-17"><a href="#cb12-17" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">filter</span>(COUNTRY <span class="sc">%in%</span> <span class="fu">c</span>(</span>
-<span id="cb12-18"><a href="#cb12-18" aria-hidden="true" tabindex="-1"></a>    <span class="st">"Belgium"</span>,<span class="st">"Switzerland"</span>,<span class="st">"Czechia"</span>,<span class="st">"Germany"</span>,<span class="st">"Denmark"</span>,<span class="st">"Spain"</span>,<span class="st">"Finland"</span>,</span>
-<span id="cb12-19"><a href="#cb12-19" aria-hidden="true" tabindex="-1"></a>    <span class="st">"France"</span>,<span class="st">"Italy"</span>,<span class="st">"Netherlands"</span>,<span class="st">"Norway"</span>,<span class="st">"Portugal"</span>,<span class="st">"Sweden"</span>,<span class="st">"United Kingdom"</span>,</span>
-<span id="cb12-20"><a href="#cb12-20" aria-hidden="true" tabindex="-1"></a>    <span class="st">"UK"</span>,<span class="st">"Ireland"</span>,<span class="st">"Austria"</span>,<span class="st">"Poland"</span></span>
-<span id="cb12-21"><a href="#cb12-21" aria-hidden="true" tabindex="-1"></a>  )) <span class="sc">|&gt;</span></span>
-<span id="cb12-22"><a href="#cb12-22" aria-hidden="true" tabindex="-1"></a>  sf<span class="sc">::</span><span class="fu">st_bbox</span>()</span>
-<span id="cb12-23"><a href="#cb12-23" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-24"><a href="#cb12-24" aria-hidden="true" tabindex="-1"></a>base <span class="ot">&lt;-</span> <span class="fu">ggplot</span>() <span class="sc">+</span></span>
-<span id="cb12-25"><a href="#cb12-25" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_sf</span>(<span class="at">data =</span> world, <span class="at">fill =</span> <span class="st">"white"</span>) <span class="sc">+</span></span>
-<span id="cb12-26"><a href="#cb12-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_sf</span>(<span class="at">data =</span> site_yrs, <span class="fu">aes</span>(<span class="at">color =</span> n_yrs), <span class="at">size =</span> <span class="fl">0.5</span>) <span class="sc">+</span></span>
-<span id="cb12-27"><a href="#cb12-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_color_continuous_sequential</span>(<span class="at">palette =</span> <span class="st">"Viridis"</span>, <span class="at">rev =</span> <span class="cn">FALSE</span>, <span class="at">end =</span> <span class="fl">0.9</span>) <span class="sc">+</span></span>
-<span id="cb12-28"><a href="#cb12-28" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_void</span>() <span class="sc">+</span></span>
-<span id="cb12-29"><a href="#cb12-29" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">panel.background =</span> <span class="fu">element_rect</span>(<span class="at">fill =</span> <span class="st">"lightblue"</span>, <span class="at">color =</span> <span class="st">"black"</span>))</span>
-<span id="cb12-30"><a href="#cb12-30" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-31"><a href="#cb12-31" aria-hidden="true" tabindex="-1"></a>p_world <span class="ot">&lt;-</span> base <span class="sc">+</span> <span class="fu">coord_sf</span>(<span class="at">expand =</span> <span class="cn">FALSE</span>)</span>
-<span id="cb12-32"><a href="#cb12-32" aria-hidden="true" tabindex="-1"></a>p_na    <span class="ot">&lt;-</span> base <span class="sc">+</span> <span class="fu">coord_sf</span>(<span class="at">xlim =</span> <span class="fu">c</span>(bbox_na[<span class="st">"xmin"</span>], bbox_na[<span class="st">"xmax"</span>]),</span>
-<span id="cb12-33"><a href="#cb12-33" aria-hidden="true" tabindex="-1"></a>                           <span class="at">ylim =</span> <span class="fu">c</span>(bbox_na[<span class="st">"ymin"</span>], bbox_na[<span class="st">"ymax"</span>]))</span>
-<span id="cb12-34"><a href="#cb12-34" aria-hidden="true" tabindex="-1"></a>p_eu    <span class="ot">&lt;-</span> base <span class="sc">+</span> <span class="fu">coord_sf</span>(<span class="at">xlim =</span> <span class="fu">c</span>(bbox_eu[<span class="st">"xmin"</span>], bbox_eu[<span class="st">"xmax"</span>]),</span>
-<span id="cb12-35"><a href="#cb12-35" aria-hidden="true" tabindex="-1"></a>                           <span class="at">ylim =</span> <span class="fu">c</span>(bbox_eu[<span class="st">"ymin"</span>], bbox_eu[<span class="st">"ymax"</span>]))</span>
-<span id="cb12-36"><a href="#cb12-36" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-37"><a href="#cb12-37" aria-hidden="true" tabindex="-1"></a>p_site_years <span class="ot">&lt;-</span> p_world <span class="sc">/</span> (p_eu <span class="sc">|</span> p_na) <span class="sc">+</span></span>
-<span id="cb12-38"><a href="#cb12-38" aria-hidden="true" tabindex="-1"></a>  patchwork<span class="sc">::</span><span class="fu">plot_layout</span>(<span class="at">widths =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="fl">0.4</span>, <span class="fl">0.6</span>), <span class="at">guides =</span> <span class="st">"collect"</span>) <span class="sc">&amp;</span></span>
-<span id="cb12-39"><a href="#cb12-39" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">color =</span> <span class="st">"# yrs"</span>)</span>
-<span id="cb12-40"><a href="#cb12-40" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb12-41"><a href="#cb12-41" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(p_site_years, <span class="st">"eric_n_yrs_site_map"</span>, <span class="at">width =</span> <span class="dv">10</span>, <span class="at">height =</span> <span class="dv">8</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>world <span class="ot">&lt;-</span> rnaturalearth<span class="sc">::</span><span class="fu">ne_countries</span>(<span class="at">scale =</span> <span class="st">"medium"</span>, <span class="at">returnclass =</span> <span class="st">"sf"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">filter</span>(continent <span class="sc">!=</span> <span class="st">"Antarctica"</span>)</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>site_yrs <span class="ot">&lt;-</span> annual_std <span class="sc">|&gt;</span></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">group_by</span>(site) <span class="sc">|&gt;</span></span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">summarize</span>(<span class="at">n_yrs =</span> dplyr<span class="sc">::</span><span class="fu">n_distinct</span>(year), <span class="at">.groups =</span> <span class="st">"drop"</span>) <span class="sc">|&gt;</span></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">left_join</span>(metadata, dplyr<span class="sc">::</span><span class="fu">join_by</span>(site)) <span class="sc">|&gt;</span></span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">filter</span>(<span class="sc">!</span><span class="fu">is.na</span>(LOCATION_LONG), <span class="sc">!</span><span class="fu">is.na</span>(LOCATION_LAT)) <span class="sc">|&gt;</span></span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a>  sf<span class="sc">::</span><span class="fu">st_as_sf</span>(<span class="at">coords =</span> <span class="fu">c</span>(<span class="st">"LOCATION_LONG"</span>,<span class="st">"LOCATION_LAT"</span>), <span class="at">crs =</span> <span class="dv">4326</span>)</span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a><span class="co"># BBoxes from sites (avoid typos like 'Portugul')</span></span>
+<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a>bbox_na <span class="ot">&lt;-</span> site_yrs <span class="sc">|&gt;</span></span>
+<span id="cb14-13"><a href="#cb14-13" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">filter</span>(COUNTRY <span class="sc">%in%</span> <span class="fu">c</span>(<span class="st">"USA"</span>,<span class="st">"United States of America"</span>,<span class="st">"Canada"</span>,<span class="st">"Mexico"</span>,<span class="st">"Panama"</span>,<span class="st">"Costa Rica"</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb14-14"><a href="#cb14-14" aria-hidden="true" tabindex="-1"></a>  sf<span class="sc">::</span><span class="fu">st_bbox</span>()</span>
+<span id="cb14-15"><a href="#cb14-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-16"><a href="#cb14-16" aria-hidden="true" tabindex="-1"></a>bbox_eu <span class="ot">&lt;-</span> site_yrs <span class="sc">|&gt;</span></span>
+<span id="cb14-17"><a href="#cb14-17" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">filter</span>(COUNTRY <span class="sc">%in%</span> <span class="fu">c</span>(</span>
+<span id="cb14-18"><a href="#cb14-18" aria-hidden="true" tabindex="-1"></a>    <span class="st">"Belgium"</span>,<span class="st">"Switzerland"</span>,<span class="st">"Czechia"</span>,<span class="st">"Germany"</span>,<span class="st">"Denmark"</span>,<span class="st">"Spain"</span>,<span class="st">"Finland"</span>,</span>
+<span id="cb14-19"><a href="#cb14-19" aria-hidden="true" tabindex="-1"></a>    <span class="st">"France"</span>,<span class="st">"Italy"</span>,<span class="st">"Netherlands"</span>,<span class="st">"Norway"</span>,<span class="st">"Portugal"</span>,<span class="st">"Sweden"</span>,<span class="st">"United Kingdom"</span>,</span>
+<span id="cb14-20"><a href="#cb14-20" aria-hidden="true" tabindex="-1"></a>    <span class="st">"UK"</span>,<span class="st">"Ireland"</span>,<span class="st">"Austria"</span>,<span class="st">"Poland"</span></span>
+<span id="cb14-21"><a href="#cb14-21" aria-hidden="true" tabindex="-1"></a>  )) <span class="sc">|&gt;</span></span>
+<span id="cb14-22"><a href="#cb14-22" aria-hidden="true" tabindex="-1"></a>  sf<span class="sc">::</span><span class="fu">st_bbox</span>()</span>
+<span id="cb14-23"><a href="#cb14-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-24"><a href="#cb14-24" aria-hidden="true" tabindex="-1"></a>base <span class="ot">&lt;-</span> <span class="fu">ggplot</span>() <span class="sc">+</span></span>
+<span id="cb14-25"><a href="#cb14-25" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_sf</span>(<span class="at">data =</span> world, <span class="at">fill =</span> <span class="st">"white"</span>) <span class="sc">+</span></span>
+<span id="cb14-26"><a href="#cb14-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_sf</span>(<span class="at">data =</span> site_yrs, <span class="fu">aes</span>(<span class="at">color =</span> n_yrs), <span class="at">size =</span> <span class="fl">0.5</span>) <span class="sc">+</span></span>
+<span id="cb14-27"><a href="#cb14-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_color_continuous_sequential</span>(<span class="at">palette =</span> <span class="st">"Viridis"</span>, <span class="at">rev =</span> <span class="cn">FALSE</span>, <span class="at">end =</span> <span class="fl">0.9</span>) <span class="sc">+</span></span>
+<span id="cb14-28"><a href="#cb14-28" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_void</span>() <span class="sc">+</span></span>
+<span id="cb14-29"><a href="#cb14-29" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">panel.background =</span> <span class="fu">element_rect</span>(<span class="at">fill =</span> <span class="st">"lightblue"</span>, <span class="at">color =</span> <span class="st">"black"</span>))</span>
+<span id="cb14-30"><a href="#cb14-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-31"><a href="#cb14-31" aria-hidden="true" tabindex="-1"></a>p_world <span class="ot">&lt;-</span> base <span class="sc">+</span> <span class="fu">coord_sf</span>(<span class="at">expand =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb14-32"><a href="#cb14-32" aria-hidden="true" tabindex="-1"></a>p_na    <span class="ot">&lt;-</span> base <span class="sc">+</span> <span class="fu">coord_sf</span>(<span class="at">xlim =</span> <span class="fu">c</span>(bbox_na[<span class="st">"xmin"</span>], bbox_na[<span class="st">"xmax"</span>]),</span>
+<span id="cb14-33"><a href="#cb14-33" aria-hidden="true" tabindex="-1"></a>                           <span class="at">ylim =</span> <span class="fu">c</span>(bbox_na[<span class="st">"ymin"</span>], bbox_na[<span class="st">"ymax"</span>]))</span>
+<span id="cb14-34"><a href="#cb14-34" aria-hidden="true" tabindex="-1"></a>p_eu    <span class="ot">&lt;-</span> base <span class="sc">+</span> <span class="fu">coord_sf</span>(<span class="at">xlim =</span> <span class="fu">c</span>(bbox_eu[<span class="st">"xmin"</span>], bbox_eu[<span class="st">"xmax"</span>]),</span>
+<span id="cb14-35"><a href="#cb14-35" aria-hidden="true" tabindex="-1"></a>                           <span class="at">ylim =</span> <span class="fu">c</span>(bbox_eu[<span class="st">"ymin"</span>], bbox_eu[<span class="st">"ymax"</span>]))</span>
+<span id="cb14-36"><a href="#cb14-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-37"><a href="#cb14-37" aria-hidden="true" tabindex="-1"></a>p_site_years <span class="ot">&lt;-</span> p_world <span class="sc">/</span> (p_eu <span class="sc">|</span> p_na) <span class="sc">+</span></span>
+<span id="cb14-38"><a href="#cb14-38" aria-hidden="true" tabindex="-1"></a>  patchwork<span class="sc">::</span><span class="fu">plot_layout</span>(<span class="at">widths =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="fl">0.4</span>, <span class="fl">0.6</span>), <span class="at">guides =</span> <span class="st">"collect"</span>) <span class="sc">&amp;</span></span>
+<span id="cb14-39"><a href="#cb14-39" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">color =</span> <span class="st">"# yrs"</span>)</span>
+<span id="cb14-40"><a href="#cb14-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-41"><a href="#cb14-41" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(p_site_years, <span class="st">"eric_n_yrs_site_map"</span>, <span class="at">width =</span> <span class="dv">10</span>, <span class="at">height =</span> <span class="dv">8</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div class="quarto-figure quarto-figure-center">
@@ -466,7 +495,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>p_site_years</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>p_site_years</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div class="quarto-figure quarto-figure-center">
@@ -483,28 +512,28 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>metadata_sf <span class="ot">&lt;-</span> metadata <span class="sc">|&gt;</span></span>
-<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">filter</span>(<span class="sc">!</span><span class="fu">is.na</span>(LOCATION_LONG), <span class="sc">!</span><span class="fu">is.na</span>(LOCATION_LAT)) <span class="sc">|&gt;</span></span>
-<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>  sf<span class="sc">::</span><span class="fu">st_as_sf</span>(<span class="at">coords =</span> <span class="fu">c</span>(<span class="st">"LOCATION_LONG"</span>,<span class="st">"LOCATION_LAT"</span>), <span class="at">crs =</span> <span class="dv">4326</span>)</span>
-<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>base2 <span class="ot">&lt;-</span> <span class="fu">ggplot</span>() <span class="sc">+</span></span>
-<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_sf</span>(<span class="at">data =</span> world, <span class="at">fill =</span> <span class="st">"white"</span>) <span class="sc">+</span></span>
-<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_sf</span>(<span class="at">data =</span> metadata_sf, <span class="fu">aes</span>(<span class="at">color =</span> IGBP), <span class="at">size =</span> <span class="fl">0.5</span>, <span class="at">key_glyph =</span> <span class="st">"rect"</span>) <span class="sc">+</span></span>
-<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_color_discrete_qualitative</span>() <span class="sc">+</span></span>
-<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_void</span>() <span class="sc">+</span></span>
-<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">panel.background =</span> <span class="fu">element_rect</span>(<span class="at">fill =</span> <span class="st">"lightblue"</span>, <span class="at">color =</span> <span class="st">"black"</span>))</span>
-<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a>p_world2 <span class="ot">&lt;-</span> base2 <span class="sc">+</span> <span class="fu">coord_sf</span>(<span class="at">expand =</span> <span class="cn">FALSE</span>)</span>
-<span id="cb14-13"><a href="#cb14-13" aria-hidden="true" tabindex="-1"></a>p_na2    <span class="ot">&lt;-</span> base2 <span class="sc">+</span> <span class="fu">coord_sf</span>(<span class="at">xlim =</span> <span class="fu">c</span>(bbox_na[<span class="st">"xmin"</span>], bbox_na[<span class="st">"xmax"</span>]),</span>
-<span id="cb14-14"><a href="#cb14-14" aria-hidden="true" tabindex="-1"></a>                             <span class="at">ylim =</span> <span class="fu">c</span>(bbox_na[<span class="st">"ymin"</span>], bbox_na[<span class="st">"ymax"</span>]))</span>
-<span id="cb14-15"><a href="#cb14-15" aria-hidden="true" tabindex="-1"></a>p_eu2    <span class="ot">&lt;-</span> base2 <span class="sc">+</span> <span class="fu">coord_sf</span>(<span class="at">xlim =</span> <span class="fu">c</span>(bbox_eu[<span class="st">"xmin"</span>], bbox_eu[<span class="st">"xmax"</span>]),</span>
-<span id="cb14-16"><a href="#cb14-16" aria-hidden="true" tabindex="-1"></a>                             <span class="at">ylim =</span> <span class="fu">c</span>(bbox_eu[<span class="st">"ymin"</span>], bbox_eu[<span class="st">"ymax"</span>]))</span>
-<span id="cb14-17"><a href="#cb14-17" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb14-18"><a href="#cb14-18" aria-hidden="true" tabindex="-1"></a>p_igbp <span class="ot">&lt;-</span> p_world2 <span class="sc">/</span> (p_eu2 <span class="sc">|</span> p_na2) <span class="sc">+</span></span>
-<span id="cb14-19"><a href="#cb14-19" aria-hidden="true" tabindex="-1"></a>  patchwork<span class="sc">::</span><span class="fu">plot_layout</span>(<span class="at">widths =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="fl">0.4</span>, <span class="fl">0.6</span>), <span class="at">guides =</span> <span class="st">"collect"</span>) <span class="sc">&amp;</span></span>
-<span id="cb14-20"><a href="#cb14-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">color =</span> <span class="st">"IGBP"</span>)</span>
-<span id="cb14-21"><a href="#cb14-21" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb14-22"><a href="#cb14-22" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(p_igbp, <span class="st">"eric_igbp_site_map"</span>, <span class="at">width =</span> <span class="dv">10</span>, <span class="at">height =</span> <span class="dv">8</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb16"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>metadata_sf <span class="ot">&lt;-</span> metadata <span class="sc">|&gt;</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">filter</span>(<span class="sc">!</span><span class="fu">is.na</span>(LOCATION_LONG), <span class="sc">!</span><span class="fu">is.na</span>(LOCATION_LAT)) <span class="sc">|&gt;</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>  sf<span class="sc">::</span><span class="fu">st_as_sf</span>(<span class="at">coords =</span> <span class="fu">c</span>(<span class="st">"LOCATION_LONG"</span>,<span class="st">"LOCATION_LAT"</span>), <span class="at">crs =</span> <span class="dv">4326</span>)</span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>base2 <span class="ot">&lt;-</span> <span class="fu">ggplot</span>() <span class="sc">+</span></span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_sf</span>(<span class="at">data =</span> world, <span class="at">fill =</span> <span class="st">"white"</span>) <span class="sc">+</span></span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_sf</span>(<span class="at">data =</span> metadata_sf, <span class="fu">aes</span>(<span class="at">color =</span> IGBP), <span class="at">size =</span> <span class="fl">0.5</span>, <span class="at">key_glyph =</span> <span class="st">"rect"</span>) <span class="sc">+</span></span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_color_discrete_qualitative</span>() <span class="sc">+</span></span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_void</span>() <span class="sc">+</span></span>
+<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">panel.background =</span> <span class="fu">element_rect</span>(<span class="at">fill =</span> <span class="st">"lightblue"</span>, <span class="at">color =</span> <span class="st">"black"</span>))</span>
+<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a>p_world2 <span class="ot">&lt;-</span> base2 <span class="sc">+</span> <span class="fu">coord_sf</span>(<span class="at">expand =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a>p_na2    <span class="ot">&lt;-</span> base2 <span class="sc">+</span> <span class="fu">coord_sf</span>(<span class="at">xlim =</span> <span class="fu">c</span>(bbox_na[<span class="st">"xmin"</span>], bbox_na[<span class="st">"xmax"</span>]),</span>
+<span id="cb16-14"><a href="#cb16-14" aria-hidden="true" tabindex="-1"></a>                             <span class="at">ylim =</span> <span class="fu">c</span>(bbox_na[<span class="st">"ymin"</span>], bbox_na[<span class="st">"ymax"</span>]))</span>
+<span id="cb16-15"><a href="#cb16-15" aria-hidden="true" tabindex="-1"></a>p_eu2    <span class="ot">&lt;-</span> base2 <span class="sc">+</span> <span class="fu">coord_sf</span>(<span class="at">xlim =</span> <span class="fu">c</span>(bbox_eu[<span class="st">"xmin"</span>], bbox_eu[<span class="st">"xmax"</span>]),</span>
+<span id="cb16-16"><a href="#cb16-16" aria-hidden="true" tabindex="-1"></a>                             <span class="at">ylim =</span> <span class="fu">c</span>(bbox_eu[<span class="st">"ymin"</span>], bbox_eu[<span class="st">"ymax"</span>]))</span>
+<span id="cb16-17"><a href="#cb16-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-18"><a href="#cb16-18" aria-hidden="true" tabindex="-1"></a>p_igbp <span class="ot">&lt;-</span> p_world2 <span class="sc">/</span> (p_eu2 <span class="sc">|</span> p_na2) <span class="sc">+</span></span>
+<span id="cb16-19"><a href="#cb16-19" aria-hidden="true" tabindex="-1"></a>  patchwork<span class="sc">::</span><span class="fu">plot_layout</span>(<span class="at">widths =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="fl">0.4</span>, <span class="fl">0.6</span>), <span class="at">guides =</span> <span class="st">"collect"</span>) <span class="sc">&amp;</span></span>
+<span id="cb16-20"><a href="#cb16-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">color =</span> <span class="st">"IGBP"</span>)</span>
+<span id="cb16-21"><a href="#cb16-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-22"><a href="#cb16-22" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(p_igbp, <span class="st">"eric_igbp_site_map"</span>, <span class="at">width =</span> <span class="dv">10</span>, <span class="at">height =</span> <span class="dv">8</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div class="quarto-figure quarto-figure-center">
@@ -516,7 +545,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>p_igbp</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb17"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>p_igbp</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div class="quarto-figure quarto-figure-center">
@@ -533,79 +562,79 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb16"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>annual_hist <span class="ot">&lt;-</span> annual_std <span class="sc">|&gt;</span></span>
-<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">select</span>(site, year, dplyr<span class="sc">::</span><span class="fu">all_of</span>(vars_of_interest)) <span class="sc">|&gt;</span></span>
-<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">filter</span>(year <span class="sc">&lt;</span> <span class="fu">max</span>(year, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)) <span class="sc">|&gt;</span></span>
-<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">summarize</span>(dplyr<span class="sc">::</span><span class="fu">across</span>(dplyr<span class="sc">::</span><span class="fu">all_of</span>(vars_of_interest), <span class="sc">~</span><span class="fu">mean</span>(.x, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)),</span>
-<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>                   <span class="at">.by =</span> site)</span>
-<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a>annual_curr <span class="ot">&lt;-</span> annual_std <span class="sc">|&gt;</span></span>
-<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">select</span>(site, year, dplyr<span class="sc">::</span><span class="fu">all_of</span>(vars_of_interest)) <span class="sc">|&gt;</span></span>
-<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">filter</span>(year <span class="sc">==</span> <span class="fu">max</span>(year, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)) <span class="sc">|&gt;</span></span>
-<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">summarize</span>(dplyr<span class="sc">::</span><span class="fu">across</span>(dplyr<span class="sc">::</span><span class="fu">all_of</span>(vars_of_interest), <span class="sc">~</span><span class="fu">mean</span>(.x, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)),</span>
-<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a>                   <span class="at">.by =</span> site)</span>
-<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a>plot_df <span class="ot">&lt;-</span> dplyr<span class="sc">::</span><span class="fu">bind_rows</span>(</span>
-<span id="cb16-14"><a href="#cb16-14" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">mutate</span>(annual_hist, <span class="at">period =</span> <span class="st">"hist"</span>),</span>
-<span id="cb16-15"><a href="#cb16-15" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">mutate</span>(annual_curr, <span class="at">period =</span> <span class="st">"curr"</span>)</span>
-<span id="cb16-16"><a href="#cb16-16" aria-hidden="true" tabindex="-1"></a>) <span class="sc">|&gt;</span></span>
-<span id="cb16-17"><a href="#cb16-17" aria-hidden="true" tabindex="-1"></a>  tidyr<span class="sc">::</span><span class="fu">pivot_longer</span>(<span class="fu">c</span>(<span class="sc">-</span>site, <span class="sc">-</span>period)) <span class="sc">|&gt;</span></span>
-<span id="cb16-18"><a href="#cb16-18" aria-hidden="true" tabindex="-1"></a>  tidyr<span class="sc">::</span><span class="fu">pivot_wider</span>(<span class="at">names_from =</span> period, <span class="at">values_from =</span> value) <span class="sc">|&gt;</span></span>
-<span id="cb16-19"><a href="#cb16-19" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">mutate</span>(<span class="at">diff =</span> curr <span class="sc">-</span> hist) <span class="sc">|&gt;</span></span>
-<span id="cb16-20"><a href="#cb16-20" aria-hidden="true" tabindex="-1"></a>  tidyr<span class="sc">::</span><span class="fu">pivot_wider</span>(<span class="at">names_from =</span> name, <span class="at">values_from =</span> <span class="fu">c</span>(hist, curr, diff)) <span class="sc">|&gt;</span></span>
-<span id="cb16-21"><a href="#cb16-21" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">left_join</span>(metadata <span class="sc">|&gt;</span> dplyr<span class="sc">::</span><span class="fu">select</span>(site, LOCATION_LAT, LOCATION_LONG), dplyr<span class="sc">::</span><span class="fu">join_by</span>(site)) <span class="sc">|&gt;</span></span>
-<span id="cb16-22"><a href="#cb16-22" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">filter</span>(<span class="fu">is.finite</span>(LOCATION_LONG), <span class="fu">is.finite</span>(LOCATION_LAT)) <span class="sc">|&gt;</span></span>
-<span id="cb16-23"><a href="#cb16-23" aria-hidden="true" tabindex="-1"></a>  sf<span class="sc">::</span><span class="fu">st_as_sf</span>(<span class="at">coords =</span> <span class="fu">c</span>(<span class="st">"LOCATION_LONG"</span>,<span class="st">"LOCATION_LAT"</span>), <span class="at">crs =</span> <span class="dv">4326</span>)</span>
-<span id="cb16-24"><a href="#cb16-24" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-25"><a href="#cb16-25" aria-hidden="true" tabindex="-1"></a>make_pair <span class="ot">&lt;-</span> <span class="cf">function</span>(var){</span>
-<span id="cb16-26"><a href="#cb16-26" aria-hidden="true" tabindex="-1"></a>  lab <span class="ot">&lt;-</span> stringr<span class="sc">::</span><span class="fu">str_extract</span>(var, <span class="st">"GPP|NEE|RECO"</span>)</span>
-<span id="cb16-27"><a href="#cb16-27" aria-hidden="true" tabindex="-1"></a>  var_hist <span class="ot">&lt;-</span> <span class="fu">paste0</span>(<span class="st">"hist_"</span>, var)</span>
-<span id="cb16-28"><a href="#cb16-28" aria-hidden="true" tabindex="-1"></a>  var_diff <span class="ot">&lt;-</span> <span class="fu">paste0</span>(<span class="st">"diff_"</span>, var)</span>
-<span id="cb16-29"><a href="#cb16-29" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-30"><a href="#cb16-30" aria-hidden="true" tabindex="-1"></a>  p1 <span class="ot">&lt;-</span> plot_df <span class="sc">|&gt;</span></span>
-<span id="cb16-31"><a href="#cb16-31" aria-hidden="true" tabindex="-1"></a>    dplyr<span class="sc">::</span><span class="fu">filter</span>(dplyr<span class="sc">::</span><span class="fu">if_all</span>(dplyr<span class="sc">::</span><span class="fu">all_of</span>(var_hist), is.finite)) <span class="sc">|&gt;</span></span>
-<span id="cb16-32"><a href="#cb16-32" aria-hidden="true" tabindex="-1"></a>    <span class="fu">ggplot</span>() <span class="sc">+</span></span>
-<span id="cb16-33"><a href="#cb16-33" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_sf</span>(<span class="at">data =</span> world, <span class="at">fill =</span> <span class="st">"white"</span>) <span class="sc">+</span></span>
-<span id="cb16-34"><a href="#cb16-34" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_sf</span>(<span class="fu">aes</span>(<span class="at">color =</span> .data[[var_hist]]), <span class="at">size =</span> <span class="fl">0.4</span>, <span class="at">na.rm =</span> <span class="cn">TRUE</span>) <span class="sc">+</span></span>
-<span id="cb16-35"><a href="#cb16-35" aria-hidden="true" tabindex="-1"></a>    <span class="fu">labs</span>(<span class="at">color =</span> <span class="fu">paste0</span>(lab, <span class="st">" gC m&lt;sup&gt;-2&lt;/sup&gt; y&lt;sup&gt;-1&lt;/sup&gt;"</span>)) <span class="sc">+</span></span>
-<span id="cb16-36"><a href="#cb16-36" aria-hidden="true" tabindex="-1"></a>    <span class="fu">coord_sf</span>(<span class="at">expand =</span> <span class="cn">FALSE</span>) <span class="sc">+</span></span>
-<span id="cb16-37"><a href="#cb16-37" aria-hidden="true" tabindex="-1"></a>    <span class="fu">theme_void</span>() <span class="sc">+</span></span>
-<span id="cb16-38"><a href="#cb16-38" aria-hidden="true" tabindex="-1"></a>    <span class="fu">theme</span>(<span class="at">legend.title =</span> ggtext<span class="sc">::</span><span class="fu">element_markdown</span>(),</span>
-<span id="cb16-39"><a href="#cb16-39" aria-hidden="true" tabindex="-1"></a>          <span class="at">legend.position =</span> <span class="st">"bottom"</span>,</span>
-<span id="cb16-40"><a href="#cb16-40" aria-hidden="true" tabindex="-1"></a>          <span class="at">legend.key.width =</span> grid<span class="sc">::</span><span class="fu">unit</span>(<span class="dv">1</span>, <span class="st">"null"</span>),</span>
-<span id="cb16-41"><a href="#cb16-41" aria-hidden="true" tabindex="-1"></a>          <span class="at">panel.background =</span> <span class="fu">element_rect</span>(<span class="at">fill =</span> <span class="st">"lightblue"</span>, <span class="at">color =</span> <span class="st">"black"</span>))</span>
-<span id="cb16-42"><a href="#cb16-42" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-43"><a href="#cb16-43" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (lab <span class="sc">==</span> <span class="st">"NEE"</span>) {</span>
-<span id="cb16-44"><a href="#cb16-44" aria-hidden="true" tabindex="-1"></a>    p1 <span class="ot">&lt;-</span> p1 <span class="sc">+</span> cols4all<span class="sc">::</span><span class="fu">scale_color_continuous_c4a_div</span>(<span class="st">"met.troy"</span>)</span>
-<span id="cb16-45"><a href="#cb16-45" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">else</span> {</span>
-<span id="cb16-46"><a href="#cb16-46" aria-hidden="true" tabindex="-1"></a>    p1 <span class="ot">&lt;-</span> p1 <span class="sc">+</span> <span class="fu">scale_color_continuous_sequential</span>(<span class="at">palette =</span> <span class="st">"Viridis"</span>)</span>
-<span id="cb16-47"><a href="#cb16-47" aria-hidden="true" tabindex="-1"></a>  }</span>
-<span id="cb16-48"><a href="#cb16-48" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-49"><a href="#cb16-49" aria-hidden="true" tabindex="-1"></a>  p2 <span class="ot">&lt;-</span> plot_df <span class="sc">|&gt;</span></span>
-<span id="cb16-50"><a href="#cb16-50" aria-hidden="true" tabindex="-1"></a>    dplyr<span class="sc">::</span><span class="fu">filter</span>(dplyr<span class="sc">::</span><span class="fu">if_all</span>(dplyr<span class="sc">::</span><span class="fu">all_of</span>(var_diff), is.finite)) <span class="sc">|&gt;</span></span>
-<span id="cb16-51"><a href="#cb16-51" aria-hidden="true" tabindex="-1"></a>    <span class="fu">ggplot</span>() <span class="sc">+</span></span>
-<span id="cb16-52"><a href="#cb16-52" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_sf</span>(<span class="at">data =</span> world, <span class="at">fill =</span> <span class="st">"white"</span>) <span class="sc">+</span></span>
-<span id="cb16-53"><a href="#cb16-53" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_sf</span>(<span class="fu">aes</span>(<span class="at">color =</span> .data[[var_diff]]), <span class="at">size =</span> <span class="fl">0.4</span>, <span class="at">na.rm =</span> <span class="cn">TRUE</span>) <span class="sc">+</span></span>
-<span id="cb16-54"><a href="#cb16-54" aria-hidden="true" tabindex="-1"></a>    <span class="fu">scale_color_continuous_diverging</span>() <span class="sc">+</span></span>
-<span id="cb16-55"><a href="#cb16-55" aria-hidden="true" tabindex="-1"></a>    <span class="fu">labs</span>(<span class="at">color =</span> <span class="fu">paste0</span>(lab, <span class="st">" gC m&lt;sup&gt;-2&lt;/sup&gt; y&lt;sup&gt;-1&lt;/sup&gt;"</span>)) <span class="sc">+</span></span>
-<span id="cb16-56"><a href="#cb16-56" aria-hidden="true" tabindex="-1"></a>    <span class="fu">coord_sf</span>(<span class="at">expand =</span> <span class="cn">FALSE</span>) <span class="sc">+</span></span>
-<span id="cb16-57"><a href="#cb16-57" aria-hidden="true" tabindex="-1"></a>    <span class="fu">theme_void</span>() <span class="sc">+</span></span>
-<span id="cb16-58"><a href="#cb16-58" aria-hidden="true" tabindex="-1"></a>    <span class="fu">theme</span>(<span class="at">legend.title =</span> ggtext<span class="sc">::</span><span class="fu">element_markdown</span>(),</span>
-<span id="cb16-59"><a href="#cb16-59" aria-hidden="true" tabindex="-1"></a>          <span class="at">legend.position =</span> <span class="st">"bottom"</span>,</span>
-<span id="cb16-60"><a href="#cb16-60" aria-hidden="true" tabindex="-1"></a>          <span class="at">legend.key.width =</span> grid<span class="sc">::</span><span class="fu">unit</span>(<span class="dv">1</span>, <span class="st">"null"</span>),</span>
-<span id="cb16-61"><a href="#cb16-61" aria-hidden="true" tabindex="-1"></a>          <span class="at">panel.background =</span> <span class="fu">element_rect</span>(<span class="at">fill =</span> <span class="st">"lightblue"</span>, <span class="at">color =</span> <span class="st">"black"</span>))</span>
-<span id="cb16-62"><a href="#cb16-62" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-63"><a href="#cb16-63" aria-hidden="true" tabindex="-1"></a>  p1 <span class="sc">|</span> p2</span>
-<span id="cb16-64"><a href="#cb16-64" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb16-65"><a href="#cb16-65" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-66"><a href="#cb16-66" aria-hidden="true" tabindex="-1"></a>p_list <span class="ot">&lt;-</span> <span class="fu">lapply</span>(vars_of_interest, make_pair)</span>
-<span id="cb16-67"><a href="#cb16-67" aria-hidden="true" tabindex="-1"></a>p_fluxmaps <span class="ot">&lt;-</span> patchwork<span class="sc">::</span><span class="fu">wrap_plots</span>(p_list, <span class="at">ncol =</span> <span class="dv">1</span>) <span class="sc">+</span> patchwork<span class="sc">::</span><span class="fu">plot_annotation</span>(<span class="at">tag_levels =</span> <span class="st">"a"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>annual_hist <span class="ot">&lt;-</span> annual_std <span class="sc">|&gt;</span></span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">select</span>(site, year, dplyr<span class="sc">::</span><span class="fu">all_of</span>(vars_of_interest)) <span class="sc">|&gt;</span></span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">filter</span>(year <span class="sc">&lt;</span> <span class="fu">max</span>(year, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">summarize</span>(dplyr<span class="sc">::</span><span class="fu">across</span>(dplyr<span class="sc">::</span><span class="fu">all_of</span>(vars_of_interest), <span class="sc">~</span><span class="fu">mean</span>(.x, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)),</span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a>                   <span class="at">.by =</span> site)</span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a>annual_curr <span class="ot">&lt;-</span> annual_std <span class="sc">|&gt;</span></span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">select</span>(site, year, dplyr<span class="sc">::</span><span class="fu">all_of</span>(vars_of_interest)) <span class="sc">|&gt;</span></span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">filter</span>(year <span class="sc">==</span> <span class="fu">max</span>(year, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">summarize</span>(dplyr<span class="sc">::</span><span class="fu">across</span>(dplyr<span class="sc">::</span><span class="fu">all_of</span>(vars_of_interest), <span class="sc">~</span><span class="fu">mean</span>(.x, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)),</span>
+<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a>                   <span class="at">.by =</span> site)</span>
+<span id="cb18-12"><a href="#cb18-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-13"><a href="#cb18-13" aria-hidden="true" tabindex="-1"></a>plot_df <span class="ot">&lt;-</span> dplyr<span class="sc">::</span><span class="fu">bind_rows</span>(</span>
+<span id="cb18-14"><a href="#cb18-14" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">mutate</span>(annual_hist, <span class="at">period =</span> <span class="st">"hist"</span>),</span>
+<span id="cb18-15"><a href="#cb18-15" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">mutate</span>(annual_curr, <span class="at">period =</span> <span class="st">"curr"</span>)</span>
+<span id="cb18-16"><a href="#cb18-16" aria-hidden="true" tabindex="-1"></a>) <span class="sc">|&gt;</span></span>
+<span id="cb18-17"><a href="#cb18-17" aria-hidden="true" tabindex="-1"></a>  tidyr<span class="sc">::</span><span class="fu">pivot_longer</span>(<span class="fu">c</span>(<span class="sc">-</span>site, <span class="sc">-</span>period)) <span class="sc">|&gt;</span></span>
+<span id="cb18-18"><a href="#cb18-18" aria-hidden="true" tabindex="-1"></a>  tidyr<span class="sc">::</span><span class="fu">pivot_wider</span>(<span class="at">names_from =</span> period, <span class="at">values_from =</span> value) <span class="sc">|&gt;</span></span>
+<span id="cb18-19"><a href="#cb18-19" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">mutate</span>(<span class="at">diff =</span> curr <span class="sc">-</span> hist) <span class="sc">|&gt;</span></span>
+<span id="cb18-20"><a href="#cb18-20" aria-hidden="true" tabindex="-1"></a>  tidyr<span class="sc">::</span><span class="fu">pivot_wider</span>(<span class="at">names_from =</span> name, <span class="at">values_from =</span> <span class="fu">c</span>(hist, curr, diff)) <span class="sc">|&gt;</span></span>
+<span id="cb18-21"><a href="#cb18-21" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">left_join</span>(metadata <span class="sc">|&gt;</span> dplyr<span class="sc">::</span><span class="fu">select</span>(site, LOCATION_LAT, LOCATION_LONG), dplyr<span class="sc">::</span><span class="fu">join_by</span>(site)) <span class="sc">|&gt;</span></span>
+<span id="cb18-22"><a href="#cb18-22" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">filter</span>(<span class="fu">is.finite</span>(LOCATION_LONG), <span class="fu">is.finite</span>(LOCATION_LAT)) <span class="sc">|&gt;</span></span>
+<span id="cb18-23"><a href="#cb18-23" aria-hidden="true" tabindex="-1"></a>  sf<span class="sc">::</span><span class="fu">st_as_sf</span>(<span class="at">coords =</span> <span class="fu">c</span>(<span class="st">"LOCATION_LONG"</span>,<span class="st">"LOCATION_LAT"</span>), <span class="at">crs =</span> <span class="dv">4326</span>)</span>
+<span id="cb18-24"><a href="#cb18-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-25"><a href="#cb18-25" aria-hidden="true" tabindex="-1"></a>make_pair <span class="ot">&lt;-</span> <span class="cf">function</span>(var){</span>
+<span id="cb18-26"><a href="#cb18-26" aria-hidden="true" tabindex="-1"></a>  lab <span class="ot">&lt;-</span> stringr<span class="sc">::</span><span class="fu">str_extract</span>(var, <span class="st">"GPP|NEE|RECO"</span>)</span>
+<span id="cb18-27"><a href="#cb18-27" aria-hidden="true" tabindex="-1"></a>  var_hist <span class="ot">&lt;-</span> <span class="fu">paste0</span>(<span class="st">"hist_"</span>, var)</span>
+<span id="cb18-28"><a href="#cb18-28" aria-hidden="true" tabindex="-1"></a>  var_diff <span class="ot">&lt;-</span> <span class="fu">paste0</span>(<span class="st">"diff_"</span>, var)</span>
+<span id="cb18-29"><a href="#cb18-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-30"><a href="#cb18-30" aria-hidden="true" tabindex="-1"></a>  p1 <span class="ot">&lt;-</span> plot_df <span class="sc">|&gt;</span></span>
+<span id="cb18-31"><a href="#cb18-31" aria-hidden="true" tabindex="-1"></a>    dplyr<span class="sc">::</span><span class="fu">filter</span>(dplyr<span class="sc">::</span><span class="fu">if_all</span>(dplyr<span class="sc">::</span><span class="fu">all_of</span>(var_hist), is.finite)) <span class="sc">|&gt;</span></span>
+<span id="cb18-32"><a href="#cb18-32" aria-hidden="true" tabindex="-1"></a>    <span class="fu">ggplot</span>() <span class="sc">+</span></span>
+<span id="cb18-33"><a href="#cb18-33" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_sf</span>(<span class="at">data =</span> world, <span class="at">fill =</span> <span class="st">"white"</span>) <span class="sc">+</span></span>
+<span id="cb18-34"><a href="#cb18-34" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_sf</span>(<span class="fu">aes</span>(<span class="at">color =</span> .data[[var_hist]]), <span class="at">size =</span> <span class="fl">0.4</span>, <span class="at">na.rm =</span> <span class="cn">TRUE</span>) <span class="sc">+</span></span>
+<span id="cb18-35"><a href="#cb18-35" aria-hidden="true" tabindex="-1"></a>    <span class="fu">labs</span>(<span class="at">color =</span> <span class="fu">paste0</span>(lab, <span class="st">" gC m&lt;sup&gt;-2&lt;/sup&gt; y&lt;sup&gt;-1&lt;/sup&gt;"</span>)) <span class="sc">+</span></span>
+<span id="cb18-36"><a href="#cb18-36" aria-hidden="true" tabindex="-1"></a>    <span class="fu">coord_sf</span>(<span class="at">expand =</span> <span class="cn">FALSE</span>) <span class="sc">+</span></span>
+<span id="cb18-37"><a href="#cb18-37" aria-hidden="true" tabindex="-1"></a>    <span class="fu">theme_void</span>() <span class="sc">+</span></span>
+<span id="cb18-38"><a href="#cb18-38" aria-hidden="true" tabindex="-1"></a>    <span class="fu">theme</span>(<span class="at">legend.title =</span> ggtext<span class="sc">::</span><span class="fu">element_markdown</span>(),</span>
+<span id="cb18-39"><a href="#cb18-39" aria-hidden="true" tabindex="-1"></a>          <span class="at">legend.position =</span> <span class="st">"bottom"</span>,</span>
+<span id="cb18-40"><a href="#cb18-40" aria-hidden="true" tabindex="-1"></a>          <span class="at">legend.key.width =</span> grid<span class="sc">::</span><span class="fu">unit</span>(<span class="dv">1</span>, <span class="st">"null"</span>),</span>
+<span id="cb18-41"><a href="#cb18-41" aria-hidden="true" tabindex="-1"></a>          <span class="at">panel.background =</span> <span class="fu">element_rect</span>(<span class="at">fill =</span> <span class="st">"lightblue"</span>, <span class="at">color =</span> <span class="st">"black"</span>))</span>
+<span id="cb18-42"><a href="#cb18-42" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-43"><a href="#cb18-43" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (lab <span class="sc">==</span> <span class="st">"NEE"</span>) {</span>
+<span id="cb18-44"><a href="#cb18-44" aria-hidden="true" tabindex="-1"></a>    p1 <span class="ot">&lt;-</span> p1 <span class="sc">+</span> cols4all<span class="sc">::</span><span class="fu">scale_color_continuous_c4a_div</span>(<span class="st">"met.troy"</span>)</span>
+<span id="cb18-45"><a href="#cb18-45" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">else</span> {</span>
+<span id="cb18-46"><a href="#cb18-46" aria-hidden="true" tabindex="-1"></a>    p1 <span class="ot">&lt;-</span> p1 <span class="sc">+</span> <span class="fu">scale_color_continuous_sequential</span>(<span class="at">palette =</span> <span class="st">"Viridis"</span>)</span>
+<span id="cb18-47"><a href="#cb18-47" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb18-48"><a href="#cb18-48" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-49"><a href="#cb18-49" aria-hidden="true" tabindex="-1"></a>  p2 <span class="ot">&lt;-</span> plot_df <span class="sc">|&gt;</span></span>
+<span id="cb18-50"><a href="#cb18-50" aria-hidden="true" tabindex="-1"></a>    dplyr<span class="sc">::</span><span class="fu">filter</span>(dplyr<span class="sc">::</span><span class="fu">if_all</span>(dplyr<span class="sc">::</span><span class="fu">all_of</span>(var_diff), is.finite)) <span class="sc">|&gt;</span></span>
+<span id="cb18-51"><a href="#cb18-51" aria-hidden="true" tabindex="-1"></a>    <span class="fu">ggplot</span>() <span class="sc">+</span></span>
+<span id="cb18-52"><a href="#cb18-52" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_sf</span>(<span class="at">data =</span> world, <span class="at">fill =</span> <span class="st">"white"</span>) <span class="sc">+</span></span>
+<span id="cb18-53"><a href="#cb18-53" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_sf</span>(<span class="fu">aes</span>(<span class="at">color =</span> .data[[var_diff]]), <span class="at">size =</span> <span class="fl">0.4</span>, <span class="at">na.rm =</span> <span class="cn">TRUE</span>) <span class="sc">+</span></span>
+<span id="cb18-54"><a href="#cb18-54" aria-hidden="true" tabindex="-1"></a>    <span class="fu">scale_color_continuous_diverging</span>() <span class="sc">+</span></span>
+<span id="cb18-55"><a href="#cb18-55" aria-hidden="true" tabindex="-1"></a>    <span class="fu">labs</span>(<span class="at">color =</span> <span class="fu">paste0</span>(lab, <span class="st">" gC m&lt;sup&gt;-2&lt;/sup&gt; y&lt;sup&gt;-1&lt;/sup&gt;"</span>)) <span class="sc">+</span></span>
+<span id="cb18-56"><a href="#cb18-56" aria-hidden="true" tabindex="-1"></a>    <span class="fu">coord_sf</span>(<span class="at">expand =</span> <span class="cn">FALSE</span>) <span class="sc">+</span></span>
+<span id="cb18-57"><a href="#cb18-57" aria-hidden="true" tabindex="-1"></a>    <span class="fu">theme_void</span>() <span class="sc">+</span></span>
+<span id="cb18-58"><a href="#cb18-58" aria-hidden="true" tabindex="-1"></a>    <span class="fu">theme</span>(<span class="at">legend.title =</span> ggtext<span class="sc">::</span><span class="fu">element_markdown</span>(),</span>
+<span id="cb18-59"><a href="#cb18-59" aria-hidden="true" tabindex="-1"></a>          <span class="at">legend.position =</span> <span class="st">"bottom"</span>,</span>
+<span id="cb18-60"><a href="#cb18-60" aria-hidden="true" tabindex="-1"></a>          <span class="at">legend.key.width =</span> grid<span class="sc">::</span><span class="fu">unit</span>(<span class="dv">1</span>, <span class="st">"null"</span>),</span>
+<span id="cb18-61"><a href="#cb18-61" aria-hidden="true" tabindex="-1"></a>          <span class="at">panel.background =</span> <span class="fu">element_rect</span>(<span class="at">fill =</span> <span class="st">"lightblue"</span>, <span class="at">color =</span> <span class="st">"black"</span>))</span>
+<span id="cb18-62"><a href="#cb18-62" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-63"><a href="#cb18-63" aria-hidden="true" tabindex="-1"></a>  p1 <span class="sc">|</span> p2</span>
+<span id="cb18-64"><a href="#cb18-64" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb18-65"><a href="#cb18-65" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-66"><a href="#cb18-66" aria-hidden="true" tabindex="-1"></a>p_list <span class="ot">&lt;-</span> <span class="fu">lapply</span>(vars_of_interest, make_pair)</span>
+<span id="cb18-67"><a href="#cb18-67" aria-hidden="true" tabindex="-1"></a>p_fluxmaps <span class="ot">&lt;-</span> patchwork<span class="sc">::</span><span class="fu">wrap_plots</span>(p_list, <span class="at">ncol =</span> <span class="dv">1</span>) <span class="sc">+</span> patchwork<span class="sc">::</span><span class="fu">plot_annotation</span>(<span class="at">tag_levels =</span> <span class="st">"a"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 </div>
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb17"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(p_fluxmaps, <span class="st">"eric_flux_maps"</span>, <span class="at">width =</span> <span class="dv">10</span>, <span class="at">height =</span> <span class="dv">8</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(p_fluxmaps, <span class="st">"eric_flux_maps"</span>, <span class="at">width =</span> <span class="dv">10</span>, <span class="at">height =</span> <span class="dv">8</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div class="quarto-figure quarto-figure-center">
@@ -617,7 +646,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>p_fluxmaps</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb20"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>p_fluxmaps</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div class="quarto-figure quarto-figure-center">
@@ -635,8 +664,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>p_igbp_nee  <span class="ot">&lt;-</span> <span class="fu">plot_flux_by_igbp</span>(annual_data, <span class="st">"NEE_VUT_REF"</span>)<span class="sc">$</span>composite_plot</span>
-<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(p_igbp_nee, <span class="st">"igbp_nee"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb21"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>p_igbp_nee  <span class="ot">&lt;-</span> <span class="fu">plot_flux_by_igbp</span>(annual_data, <span class="st">"NEE_VUT_REF"</span>)<span class="sc">$</span>composite_plot</span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(p_igbp_nee, <span class="st">"igbp_nee"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div>
@@ -649,8 +678,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb20"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>p_igbp_gpp  <span class="ot">&lt;-</span> <span class="fu">plot_flux_by_igbp</span>(annual_data, <span class="st">"GPP_NT_VUT_REF"</span>)<span class="sc">$</span>composite_plot</span>
-<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(p_igbp_gpp, <span class="st">"igbp_gpp"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb22"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>p_igbp_gpp  <span class="ot">&lt;-</span> <span class="fu">plot_flux_by_igbp</span>(annual_data, <span class="st">"GPP_NT_VUT_REF"</span>)<span class="sc">$</span>composite_plot</span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(p_igbp_gpp, <span class="st">"igbp_gpp"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div>
@@ -663,8 +692,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb21"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>p_igbp_reco <span class="ot">&lt;-</span> <span class="fu">plot_flux_by_igbp</span>(annual_data, <span class="st">"RECO_NT_VUT_REF"</span>)<span class="sc">$</span>composite_plot</span>
-<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(p_igbp_reco, <span class="st">"igbp_reco"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb23"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>p_igbp_reco <span class="ot">&lt;-</span> <span class="fu">plot_flux_by_igbp</span>(annual_data, <span class="st">"RECO_NT_VUT_REF"</span>)<span class="sc">$</span>composite_plot</span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(p_igbp_reco, <span class="st">"igbp_reco"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div>
@@ -680,8 +709,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb22"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>p_timeslice <span class="ot">&lt;-</span> <span class="fu">plot_flux_by_igbp_timeslice_grouped</span>(annual_data, <span class="at">flux_var =</span> <span class="st">"NEE_VUT_REF"</span>)<span class="sc">$</span>flux_plot</span>
-<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(p_timeslice, <span class="st">"timeslice_nee"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb24"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a>p_timeslice <span class="ot">&lt;-</span> <span class="fu">plot_flux_by_igbp_timeslice_grouped</span>(annual_data, <span class="at">flux_var =</span> <span class="st">"NEE_VUT_REF"</span>)<span class="sc">$</span>flux_plot</span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(p_timeslice, <span class="st">"timeslice_nee"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div>
@@ -697,8 +726,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb23"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>boxplots <span class="ot">&lt;-</span> <span class="fu">plot_flux_box_by_group</span>(annual_data, <span class="at">flux_var =</span> <span class="st">"RECO_NT_VUT_REF"</span>, <span class="at">y_mode =</span> <span class="st">"squish"</span>)</span>
-<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(boxplots<span class="sc">$</span>Forest,        <span class="st">"box_forest"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb25"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a>boxplots <span class="ot">&lt;-</span> <span class="fu">plot_flux_box_by_group</span>(annual_data, <span class="at">flux_var =</span> <span class="st">"RECO_NT_VUT_REF"</span>, <span class="at">y_mode =</span> <span class="st">"squish"</span>)</span>
+<span id="cb25-2"><a href="#cb25-2" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(boxplots<span class="sc">$</span>Forest,        <span class="st">"box_forest"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div>
@@ -709,7 +738,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb24"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(boxplots<span class="sc">$</span>ShrubOpens,    <span class="st">"box_shrubopens"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb26"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(boxplots<span class="sc">$</span>ShrubOpens,    <span class="st">"box_shrubopens"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div>
@@ -720,7 +749,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb25"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(boxplots<span class="sc">$</span>GrassCropsWet, <span class="st">"box_grasscropswet"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb27"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(boxplots<span class="sc">$</span>GrassCropsWet, <span class="st">"box_grasscropswet"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div>
@@ -736,7 +765,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb26"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(<span class="fu">plot_flux_timeseries_by_igbp</span>(annual_data, <span class="st">"NEE_VUT_REF"</span>), <span class="st">"ts_nee"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb28"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(<span class="fu">plot_flux_timeseries_by_igbp</span>(annual_data, <span class="st">"NEE_VUT_REF"</span>), <span class="st">"ts_nee"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div>
@@ -749,7 +778,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb27"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(<span class="fu">plot_flux_timeseries_by_igbp</span>(annual_data, <span class="st">"GPP_NT_VUT_REF"</span>), <span class="st">"ts_gpp"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb29"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(<span class="fu">plot_flux_timeseries_by_igbp</span>(annual_data, <span class="st">"GPP_NT_VUT_REF"</span>), <span class="st">"ts_gpp"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div>
@@ -762,7 +791,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb28"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(<span class="fu">plot_flux_timeseries_by_igbp</span>(annual_data, <span class="st">"RECO_NT_VUT_REF"</span>), <span class="st">"ts_reco"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb30"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(<span class="fu">plot_flux_timeseries_by_igbp</span>(annual_data, <span class="st">"RECO_NT_VUT_REF"</span>), <span class="st">"ts_reco"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div>
@@ -775,7 +804,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb29"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(<span class="fu">plot_flux_timeseries_by_igbp</span>(annual_data, <span class="st">"WUE"</span>), <span class="st">"ts_wue"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb31"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(<span class="fu">plot_flux_timeseries_by_igbp</span>(annual_data, <span class="st">"WUE"</span>), <span class="st">"ts_wue"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div>
@@ -791,7 +820,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb30"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(<span class="fu">plot_latitudinal_flux</span>(annual_data, metadata, <span class="st">"NEE_VUT_REF"</span>),     <span class="st">"lat_nee"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb32"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(<span class="fu">plot_latitudinal_flux</span>(annual_data, metadata, <span class="st">"NEE_VUT_REF"</span>),     <span class="st">"lat_nee"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div>
@@ -802,7 +831,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb31"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(<span class="fu">plot_latitudinal_flux</span>(annual_data, metadata, <span class="st">"GPP_NT_VUT_REF"</span>),  <span class="st">"lat_gpp"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb33"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(<span class="fu">plot_latitudinal_flux</span>(annual_data, metadata, <span class="st">"GPP_NT_VUT_REF"</span>),  <span class="st">"lat_gpp"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div>
@@ -813,7 +842,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb32"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(<span class="fu">plot_latitudinal_flux</span>(annual_data, metadata, <span class="st">"RECO_NT_VUT_REF"</span>), <span class="st">"lat_reco"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb34"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(<span class="fu">plot_latitudinal_flux</span>(annual_data, metadata, <span class="st">"RECO_NT_VUT_REF"</span>), <span class="st">"lat_reco"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div>
@@ -829,8 +858,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb33"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a>cp <span class="ot">&lt;-</span> <span class="fu">plot_annual_fluxnet_data</span>(annual_data)</span>
-<span id="cb33-2"><a href="#cb33-2" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(cp<span class="sc">$</span>precip_vs_nee, <span class="st">"precip_vs_nee"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb35"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a>cp <span class="ot">&lt;-</span> <span class="fu">plot_annual_fluxnet_data</span>(annual_data)</span>
+<span id="cb35-2"><a href="#cb35-2" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(cp<span class="sc">$</span>precip_vs_nee, <span class="st">"precip_vs_nee"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div>
@@ -841,7 +870,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb34"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(cp<span class="sc">$</span>temp_vs_gpp,   <span class="st">"temp_vs_gpp"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb36"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(cp<span class="sc">$</span>temp_vs_gpp,   <span class="st">"temp_vs_gpp"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div>
@@ -852,7 +881,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb35"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb35-1"><a href="#cb35-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(<span class="fu">PlotXY_annual</span>(annual_data, <span class="st">"GPP_NT_VUT_REF"</span>, <span class="st">"LE_F_MDS"</span>), <span class="st">"xy_gpp_le"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb37"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(<span class="fu">PlotXY_annual</span>(annual_data, <span class="st">"GPP_NT_VUT_REF"</span>, <span class="st">"LE_F_MDS"</span>), <span class="st">"xy_gpp_le"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div>
@@ -863,7 +892,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb36"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(<span class="fu">PlotXY_annual</span>(annual_data, <span class="st">"NEE_VUT_REF"</span>,     <span class="st">"LE_F_MDS"</span>), <span class="st">"xy_nee_le"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb38"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(<span class="fu">PlotXY_annual</span>(annual_data, <span class="st">"NEE_VUT_REF"</span>,     <span class="st">"LE_F_MDS"</span>), <span class="st">"xy_nee_le"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div>
@@ -879,33 +908,33 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb37"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a>climate_summary <span class="ot">&lt;-</span> annual_data <span class="sc">%&gt;%</span></span>
-<span id="cb37-2"><a href="#cb37-2" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">group_by</span>(site) <span class="sc">%&gt;%</span></span>
-<span id="cb37-3"><a href="#cb37-3" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">summarize</span>(</span>
-<span id="cb37-4"><a href="#cb37-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_precip =</span> <span class="fu">mean</span>(P_F, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),       <span class="co"># mm/yr (tower)</span></span>
-<span id="cb37-5"><a href="#cb37-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_temp   =</span> <span class="fu">mean</span>(TA_F, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),      <span class="co"># °C (tower)</span></span>
-<span id="cb37-6"><a href="#cb37-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_GPP    =</span> <span class="fu">mean</span>(GPP_NT_VUT_REF, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
-<span id="cb37-7"><a href="#cb37-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_NEE    =</span> <span class="fu">mean</span>(NEE_VUT_REF, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
-<span id="cb37-8"><a href="#cb37-8" aria-hidden="true" tabindex="-1"></a>    <span class="at">.groups =</span> <span class="st">"drop"</span></span>
-<span id="cb37-9"><a href="#cb37-9" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
-<span id="cb37-10"><a href="#cb37-10" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">mutate</span>(</span>
-<span id="cb37-11"><a href="#cb37-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_precip_cm =</span> <span class="fu">set_units</span>(mean_precip, <span class="st">"mm"</span>) <span class="sc">|&gt;</span> <span class="fu">set_units</span>(<span class="st">"cm"</span>),  <span class="co"># mm → cm</span></span>
-<span id="cb37-12"><a href="#cb37-12" aria-hidden="true" tabindex="-1"></a>    <span class="at">NEE_sign =</span> <span class="fu">ifelse</span>(mean_NEE <span class="sc">&lt;</span> <span class="dv">0</span>, <span class="st">"Sink (NEE &lt; 0)"</span>, <span class="st">"Source (NEE ≥ 0)"</span>)</span>
-<span id="cb37-13"><a href="#cb37-13" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
-<span id="cb37-14"><a href="#cb37-14" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">left_join</span>(metadata, <span class="at">by =</span> <span class="st">"site"</span>)</span>
-<span id="cb37-15"><a href="#cb37-15" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb37-16"><a href="#cb37-16" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(climate_summary)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb39"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a>climate_summary <span class="ot">&lt;-</span> annual_data <span class="sc">%&gt;%</span></span>
+<span id="cb39-2"><a href="#cb39-2" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">group_by</span>(site) <span class="sc">%&gt;%</span></span>
+<span id="cb39-3"><a href="#cb39-3" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">summarize</span>(</span>
+<span id="cb39-4"><a href="#cb39-4" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_precip =</span> <span class="fu">mean</span>(P_F, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),       <span class="co"># mm/yr (tower)</span></span>
+<span id="cb39-5"><a href="#cb39-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_temp   =</span> <span class="fu">mean</span>(TA_F, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),      <span class="co"># °C (tower)</span></span>
+<span id="cb39-6"><a href="#cb39-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_GPP    =</span> <span class="fu">mean</span>(GPP_NT_VUT_REF, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb39-7"><a href="#cb39-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_NEE    =</span> <span class="fu">mean</span>(NEE_VUT_REF, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb39-8"><a href="#cb39-8" aria-hidden="true" tabindex="-1"></a>    <span class="at">.groups =</span> <span class="st">"drop"</span></span>
+<span id="cb39-9"><a href="#cb39-9" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
+<span id="cb39-10"><a href="#cb39-10" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">mutate</span>(</span>
+<span id="cb39-11"><a href="#cb39-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">mean_precip_cm =</span> <span class="fu">set_units</span>(mean_precip, <span class="st">"mm"</span>) <span class="sc">|&gt;</span> <span class="fu">set_units</span>(<span class="st">"cm"</span>),  <span class="co"># mm → cm</span></span>
+<span id="cb39-12"><a href="#cb39-12" aria-hidden="true" tabindex="-1"></a>    <span class="at">NEE_sign =</span> <span class="fu">ifelse</span>(mean_NEE <span class="sc">&lt;</span> <span class="dv">0</span>, <span class="st">"Sink (NEE &lt; 0)"</span>, <span class="st">"Source (NEE ≥ 0)"</span>)</span>
+<span id="cb39-13"><a href="#cb39-13" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
+<span id="cb39-14"><a href="#cb39-14" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">left_join</span>(metadata, <span class="at">by =</span> <span class="st">"site"</span>)</span>
+<span id="cb39-15"><a href="#cb39-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb39-16"><a href="#cb39-16" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(climate_summary)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code># A tibble: 6 × 20
   site   mean_precip mean_temp mean_GPP mean_NEE mean_precip_cm NEE_sign SITE_ID
   &lt;chr&gt;        &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;    &lt;dbl&gt;           [cm] &lt;chr&gt;    &lt;chr&gt;  
-1 AR-Bal        433.     13.3     1733.  -161.             43.3 Sink (N… AR-Bal 
-2 AR-CCa       3415.     16.8     1160.  -145.            342.  Sink (N… AR-CCa 
-3 AR-CCg       2795.     15.3     1387.   -44.1           280.  Sink (N… AR-CCg 
-4 AR-SLu        361.     19.7     2578. -1730.             36.1 Sink (N… &lt;NA&gt;   
-5 AR-TF1       3430.      6.44     624.     1.86          343.  Source … AR-TF1 
-6 AR-TF2       3785.      5.60     289.   -17.1           378.  Sink (N… AR-TF2 
+1 AR-CCa       3085.     16.8     1449.  -233.            309.  Sink (N… AR-CCa 
+2 AR-CCg       2878.     15.3     1687.  -120.            288.  Sink (N… AR-CCg 
+3 AR-SLu        352.     19.0     2550. -1270.             35.2 Sink (N… &lt;NA&gt;   
+4 AR-TF1       3430.      6.44     624.     1.86          343.  Source … AR-TF1 
+5 AR-TF2       3868.      5.75     314.   -13.4           387.  Sink (N… AR-TF2 
+6 AR-Vir       1433.     21.6     4507.   731.            143.  Source … &lt;NA&gt;   
 # ℹ 12 more variables: SITE_NAME &lt;chr&gt;, COUNTRY &lt;chr&gt;, STATE &lt;chr&gt;, IGBP &lt;chr&gt;,
 #   LOCATION_LAT &lt;dbl&gt;, LOCATION_LONG &lt;dbl&gt;, LOCATION_ELEV &lt;dbl&gt;,
 #   CLIMATE_KOEPPEN &lt;chr&gt;, MAT &lt;dbl&gt;, MAP &lt;dbl&gt;, DATA_SOURCE &lt;chr&gt;,
@@ -918,85 +947,85 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb39"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a>wc <span class="ot">&lt;-</span> <span class="fu">readRDS</span>(here<span class="sc">::</span><span class="fu">here</span>(params<span class="sc">$</span>worldclim_rds))</span>
-<span id="cb39-2"><a href="#cb39-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb39-3"><a href="#cb39-3" aria-hidden="true" tabindex="-1"></a><span class="co"># --- Choose lat/lon columns and drop NAs before extraction ---</span></span>
-<span id="cb39-4"><a href="#cb39-4" aria-hidden="true" tabindex="-1"></a>lon_candidates <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"LOCATION_LONG"</span>,<span class="st">"LONGITUDE"</span>,<span class="st">"Longitude"</span>,<span class="st">"lon"</span>,<span class="st">"Lon"</span>,<span class="st">"LON"</span>)</span>
-<span id="cb39-5"><a href="#cb39-5" aria-hidden="true" tabindex="-1"></a>lat_candidates <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"LOCATION_LAT"</span>,<span class="st">"LATITUDE"</span>,<span class="st">"Latitude"</span>,<span class="st">"lat"</span>,<span class="st">"Lat"</span>,<span class="st">"LAT"</span>)</span>
-<span id="cb39-6"><a href="#cb39-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb39-7"><a href="#cb39-7" aria-hidden="true" tabindex="-1"></a>lon_col <span class="ot">&lt;-</span> lon_candidates[lon_candidates <span class="sc">%in%</span> <span class="fu">names</span>(climate_summary)][<span class="dv">1</span>]</span>
-<span id="cb39-8"><a href="#cb39-8" aria-hidden="true" tabindex="-1"></a>lat_col <span class="ot">&lt;-</span> lat_candidates[lat_candidates <span class="sc">%in%</span> <span class="fu">names</span>(climate_summary)][<span class="dv">1</span>]</span>
-<span id="cb39-9"><a href="#cb39-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb39-10"><a href="#cb39-10" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (<span class="fu">is.na</span>(lon_col) <span class="sc">||</span> <span class="fu">is.na</span>(lat_col)) {</span>
-<span id="cb39-11"><a href="#cb39-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">stop</span>(<span class="st">"Could not find longitude/latitude columns in climate_summary. "</span>,</span>
-<span id="cb39-12"><a href="#cb39-12" aria-hidden="true" tabindex="-1"></a>       <span class="st">"Looked for: "</span>, <span class="fu">paste</span>(lon_candidates, <span class="at">collapse=</span><span class="st">", "</span>), <span class="st">" / "</span>,</span>
-<span id="cb39-13"><a href="#cb39-13" aria-hidden="true" tabindex="-1"></a>       <span class="fu">paste</span>(lat_candidates, <span class="at">collapse=</span><span class="st">", "</span>))</span>
-<span id="cb39-14"><a href="#cb39-14" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb39-15"><a href="#cb39-15" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb39-16"><a href="#cb39-16" aria-hidden="true" tabindex="-1"></a>cs_coords <span class="ot">&lt;-</span> climate_summary <span class="sc">%&gt;%</span></span>
-<span id="cb39-17"><a href="#cb39-17" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">rename</span>(<span class="at">LON =</span> <span class="sc">!!</span>lon_col, <span class="at">LAT =</span> <span class="sc">!!</span>lat_col) <span class="sc">%&gt;%</span></span>
-<span id="cb39-18"><a href="#cb39-18" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">filter</span>(<span class="fu">is.finite</span>(LON), <span class="fu">is.finite</span>(LAT))</span>
-<span id="cb39-19"><a href="#cb39-19" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb39-20"><a href="#cb39-20" aria-hidden="true" tabindex="-1"></a>n_dropped <span class="ot">&lt;-</span> <span class="fu">nrow</span>(climate_summary) <span class="sc">-</span> <span class="fu">nrow</span>(cs_coords)</span>
-<span id="cb39-21"><a href="#cb39-21" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (n_dropped <span class="sc">&gt;</span> <span class="dv">0</span>) <span class="fu">message</span>(<span class="st">"WorldClim extraction: dropped "</span>, n_dropped, <span class="st">" site(s) with missing/invalid coordinates."</span>)</span>
-<span id="cb39-22"><a href="#cb39-22" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb39-23"><a href="#cb39-23" aria-hidden="true" tabindex="-1"></a><span class="co"># Decide extraction engine: use terra if requested OR if object is a SpatRaster</span></span>
-<span id="cb39-24"><a href="#cb39-24" aria-hidden="true" tabindex="-1"></a>use_terra_extraction <span class="ot">&lt;-</span> <span class="fu">isTRUE</span>(params<span class="sc">$</span>use_terra) <span class="sc">||</span> <span class="fu">inherits</span>(wc, <span class="st">"SpatRaster"</span>)</span>
-<span id="cb39-25"><a href="#cb39-25" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb39-26"><a href="#cb39-26" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (use_terra_extraction) {</span>
-<span id="cb39-27"><a href="#cb39-27" aria-hidden="true" tabindex="-1"></a>  <span class="co"># --- terra path ---</span></span>
-<span id="cb39-28"><a href="#cb39-28" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="sc">!</span><span class="fu">requireNamespace</span>(<span class="st">"terra"</span>, <span class="at">quietly =</span> <span class="cn">TRUE</span>)) {</span>
-<span id="cb39-29"><a href="#cb39-29" aria-hidden="true" tabindex="-1"></a>    <span class="fu">stop</span>(<span class="st">"terra is required for SpatRaster extraction. Install with install.packages('terra') "</span>,</span>
-<span id="cb39-30"><a href="#cb39-30" aria-hidden="true" tabindex="-1"></a>         <span class="st">"or set params$use_terra: false and provide a RasterStack/Brick."</span>)</span>
-<span id="cb39-31"><a href="#cb39-31" aria-hidden="true" tabindex="-1"></a>  }</span>
-<span id="cb39-32"><a href="#cb39-32" aria-hidden="true" tabindex="-1"></a>  site_pts <span class="ot">&lt;-</span> terra<span class="sc">::</span><span class="fu">vect</span>(</span>
-<span id="cb39-33"><a href="#cb39-33" aria-hidden="true" tabindex="-1"></a>    cs_coords,</span>
-<span id="cb39-34"><a href="#cb39-34" aria-hidden="true" tabindex="-1"></a>    <span class="at">geom =</span> <span class="fu">c</span>(<span class="st">"LON"</span>, <span class="st">"LAT"</span>),</span>
-<span id="cb39-35"><a href="#cb39-35" aria-hidden="true" tabindex="-1"></a>    <span class="at">crs  =</span> <span class="st">"EPSG:4326"</span></span>
-<span id="cb39-36"><a href="#cb39-36" aria-hidden="true" tabindex="-1"></a>  )</span>
-<span id="cb39-37"><a href="#cb39-37" aria-hidden="true" tabindex="-1"></a>  wc_vals <span class="ot">&lt;-</span> terra<span class="sc">::</span><span class="fu">extract</span>(wc, site_pts)</span>
-<span id="cb39-38"><a href="#cb39-38" aria-hidden="true" tabindex="-1"></a>  <span class="fu">names</span>(wc_vals) <span class="ot">&lt;-</span> <span class="fu">make.names</span>(<span class="fu">names</span>(wc_vals))</span>
-<span id="cb39-39"><a href="#cb39-39" aria-hidden="true" tabindex="-1"></a>  cs_coords<span class="sc">$</span>MAT_WorldClim <span class="ot">&lt;-</span> wc_vals[[<span class="fu">grep</span>(<span class="st">"bio_1"</span>, <span class="fu">names</span>(wc_vals))[<span class="dv">1</span>]]]</span>
-<span id="cb39-40"><a href="#cb39-40" aria-hidden="true" tabindex="-1"></a>  cs_coords<span class="sc">$</span>MAP_WorldClim <span class="ot">&lt;-</span> wc_vals[[<span class="fu">grep</span>(<span class="st">"bio_12"</span>, <span class="fu">names</span>(wc_vals))[<span class="dv">1</span>]]]</span>
-<span id="cb39-41"><a href="#cb39-41" aria-hidden="true" tabindex="-1"></a>} <span class="cf">else</span> {</span>
-<span id="cb39-42"><a href="#cb39-42" aria-hidden="true" tabindex="-1"></a>  <span class="co"># --- raster fallback ---</span></span>
-<span id="cb39-43"><a href="#cb39-43" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">inherits</span>(wc, <span class="st">"SpatRaster"</span>)) {</span>
-<span id="cb39-44"><a href="#cb39-44" aria-hidden="true" tabindex="-1"></a>    wc_try <span class="ot">&lt;-</span> <span class="fu">try</span>(<span class="fu">suppressWarnings</span>(raster<span class="sc">::</span><span class="fu">stack</span>(wc)), <span class="at">silent =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb39-45"><a href="#cb39-45" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">inherits</span>(wc_try, <span class="st">"try-error"</span>)) {</span>
-<span id="cb39-46"><a href="#cb39-46" aria-hidden="true" tabindex="-1"></a>      wc_try <span class="ot">&lt;-</span> <span class="fu">try</span>(<span class="fu">suppressWarnings</span>(<span class="fu">as</span>(wc, <span class="st">"Raster"</span>)), <span class="at">silent =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb39-47"><a href="#cb39-47" aria-hidden="true" tabindex="-1"></a>    }</span>
-<span id="cb39-48"><a href="#cb39-48" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">inherits</span>(wc_try, <span class="st">"try-error"</span>)) {</span>
-<span id="cb39-49"><a href="#cb39-49" aria-hidden="true" tabindex="-1"></a>      <span class="fu">stop</span>(<span class="st">"Could not coerce SpatRaster -&gt; Raster for raster::extract. "</span>,</span>
-<span id="cb39-50"><a href="#cb39-50" aria-hidden="true" tabindex="-1"></a>           <span class="st">"Set params$use_terra: true to use terra extraction."</span>)</span>
-<span id="cb39-51"><a href="#cb39-51" aria-hidden="true" tabindex="-1"></a>    }</span>
-<span id="cb39-52"><a href="#cb39-52" aria-hidden="true" tabindex="-1"></a>    wc <span class="ot">&lt;-</span> wc_try</span>
-<span id="cb39-53"><a href="#cb39-53" aria-hidden="true" tabindex="-1"></a>  }</span>
-<span id="cb39-54"><a href="#cb39-54" aria-hidden="true" tabindex="-1"></a>  sp_pts <span class="ot">&lt;-</span> sp<span class="sc">::</span><span class="fu">SpatialPoints</span>(</span>
-<span id="cb39-55"><a href="#cb39-55" aria-hidden="true" tabindex="-1"></a>    <span class="at">coords =</span> cs_coords[,<span class="fu">c</span>(<span class="st">"LON"</span>,<span class="st">"LAT"</span>)],</span>
-<span id="cb39-56"><a href="#cb39-56" aria-hidden="true" tabindex="-1"></a>    <span class="at">proj4string =</span> sp<span class="sc">::</span><span class="fu">CRS</span>(<span class="st">"+proj=longlat +datum=WGS84 +no_defs"</span>)</span>
-<span id="cb39-57"><a href="#cb39-57" aria-hidden="true" tabindex="-1"></a>  )</span>
-<span id="cb39-58"><a href="#cb39-58" aria-hidden="true" tabindex="-1"></a>  wc_vals <span class="ot">&lt;-</span> raster<span class="sc">::</span><span class="fu">extract</span>(wc, sp_pts)</span>
-<span id="cb39-59"><a href="#cb39-59" aria-hidden="true" tabindex="-1"></a>  nm <span class="ot">&lt;-</span> <span class="fu">colnames</span>(wc_vals)</span>
-<span id="cb39-60"><a href="#cb39-60" aria-hidden="true" tabindex="-1"></a>  mat_col <span class="ot">&lt;-</span> nm[<span class="fu">grepl</span>(<span class="st">"bio_1"</span>, nm)]</span>
-<span id="cb39-61"><a href="#cb39-61" aria-hidden="true" tabindex="-1"></a>  map_col <span class="ot">&lt;-</span> nm[<span class="fu">grepl</span>(<span class="st">"bio_12"</span>, nm)]</span>
-<span id="cb39-62"><a href="#cb39-62" aria-hidden="true" tabindex="-1"></a>  cs_coords<span class="sc">$</span>MAT_WorldClim <span class="ot">&lt;-</span> wc_vals[, mat_col][,<span class="dv">1</span>]</span>
-<span id="cb39-63"><a href="#cb39-63" aria-hidden="true" tabindex="-1"></a>  cs_coords<span class="sc">$</span>MAP_WorldClim <span class="ot">&lt;-</span> wc_vals[, map_col][,<span class="dv">1</span>]</span>
-<span id="cb39-64"><a href="#cb39-64" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb39-65"><a href="#cb39-65" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb39-66"><a href="#cb39-66" aria-hidden="true" tabindex="-1"></a><span class="co"># Merge extracted values back into full climate_summary (by site)</span></span>
-<span id="cb39-67"><a href="#cb39-67" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (<span class="sc">!</span><span class="fu">all</span>(<span class="fu">c</span>(<span class="st">"site"</span>) <span class="sc">%in%</span> <span class="fu">names</span>(cs_coords))) {</span>
-<span id="cb39-68"><a href="#cb39-68" aria-hidden="true" tabindex="-1"></a>  cs_coords<span class="sc">$</span>site <span class="ot">&lt;-</span> climate_summary<span class="sc">$</span>site[<span class="fu">match</span>(<span class="fu">rownames</span>(cs_coords), <span class="fu">rownames</span>(climate_summary))]</span>
-<span id="cb39-69"><a href="#cb39-69" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb39-70"><a href="#cb39-70" aria-hidden="true" tabindex="-1"></a>climate_summary <span class="ot">&lt;-</span> climate_summary <span class="sc">%&gt;%</span></span>
-<span id="cb39-71"><a href="#cb39-71" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">select</span>(<span class="sc">-</span>dplyr<span class="sc">::</span><span class="fu">any_of</span>(<span class="fu">c</span>(<span class="st">"MAT_WorldClim"</span>,<span class="st">"MAP_WorldClim"</span>))) <span class="sc">%&gt;%</span></span>
-<span id="cb39-72"><a href="#cb39-72" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">left_join</span>(cs_coords <span class="sc">%&gt;%</span> dplyr<span class="sc">::</span><span class="fu">select</span>(site, MAT_WorldClim, MAP_WorldClim), <span class="at">by =</span> <span class="st">"site"</span>)</span>
-<span id="cb39-73"><a href="#cb39-73" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb39-74"><a href="#cb39-74" aria-hidden="true" tabindex="-1"></a><span class="co"># Convert to Whittaker axes</span></span>
-<span id="cb39-75"><a href="#cb39-75" aria-hidden="true" tabindex="-1"></a>climate_summary <span class="ot">&lt;-</span> climate_summary <span class="sc">%&gt;%</span></span>
-<span id="cb39-76"><a href="#cb39-76" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">mutate</span>(</span>
-<span id="cb39-77"><a href="#cb39-77" aria-hidden="true" tabindex="-1"></a>    <span class="at">MAT_WorldClim_C  =</span> MAT_WorldClim ,  <span class="co"># °C</span></span>
-<span id="cb39-78"><a href="#cb39-78" aria-hidden="true" tabindex="-1"></a>    <span class="at">MAP_WorldClim_cm =</span> MAP_WorldClim <span class="sc">/</span> <span class="dv">10</span>   <span class="co"># mm → cm</span></span>
-<span id="cb39-79"><a href="#cb39-79" aria-hidden="true" tabindex="-1"></a>  )</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb41"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a>wc <span class="ot">&lt;-</span> <span class="fu">readRDS</span>(here<span class="sc">::</span><span class="fu">here</span>(params<span class="sc">$</span>worldclim_rds))</span>
+<span id="cb41-2"><a href="#cb41-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-3"><a href="#cb41-3" aria-hidden="true" tabindex="-1"></a><span class="co"># --- Choose lat/lon columns and drop NAs before extraction ---</span></span>
+<span id="cb41-4"><a href="#cb41-4" aria-hidden="true" tabindex="-1"></a>lon_candidates <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"LOCATION_LONG"</span>,<span class="st">"LONGITUDE"</span>,<span class="st">"Longitude"</span>,<span class="st">"lon"</span>,<span class="st">"Lon"</span>,<span class="st">"LON"</span>)</span>
+<span id="cb41-5"><a href="#cb41-5" aria-hidden="true" tabindex="-1"></a>lat_candidates <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"LOCATION_LAT"</span>,<span class="st">"LATITUDE"</span>,<span class="st">"Latitude"</span>,<span class="st">"lat"</span>,<span class="st">"Lat"</span>,<span class="st">"LAT"</span>)</span>
+<span id="cb41-6"><a href="#cb41-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-7"><a href="#cb41-7" aria-hidden="true" tabindex="-1"></a>lon_col <span class="ot">&lt;-</span> lon_candidates[lon_candidates <span class="sc">%in%</span> <span class="fu">names</span>(climate_summary)][<span class="dv">1</span>]</span>
+<span id="cb41-8"><a href="#cb41-8" aria-hidden="true" tabindex="-1"></a>lat_col <span class="ot">&lt;-</span> lat_candidates[lat_candidates <span class="sc">%in%</span> <span class="fu">names</span>(climate_summary)][<span class="dv">1</span>]</span>
+<span id="cb41-9"><a href="#cb41-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-10"><a href="#cb41-10" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (<span class="fu">is.na</span>(lon_col) <span class="sc">||</span> <span class="fu">is.na</span>(lat_col)) {</span>
+<span id="cb41-11"><a href="#cb41-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">stop</span>(<span class="st">"Could not find longitude/latitude columns in climate_summary. "</span>,</span>
+<span id="cb41-12"><a href="#cb41-12" aria-hidden="true" tabindex="-1"></a>       <span class="st">"Looked for: "</span>, <span class="fu">paste</span>(lon_candidates, <span class="at">collapse=</span><span class="st">", "</span>), <span class="st">" / "</span>,</span>
+<span id="cb41-13"><a href="#cb41-13" aria-hidden="true" tabindex="-1"></a>       <span class="fu">paste</span>(lat_candidates, <span class="at">collapse=</span><span class="st">", "</span>))</span>
+<span id="cb41-14"><a href="#cb41-14" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb41-15"><a href="#cb41-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-16"><a href="#cb41-16" aria-hidden="true" tabindex="-1"></a>cs_coords <span class="ot">&lt;-</span> climate_summary <span class="sc">%&gt;%</span></span>
+<span id="cb41-17"><a href="#cb41-17" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">rename</span>(<span class="at">LON =</span> <span class="sc">!!</span>lon_col, <span class="at">LAT =</span> <span class="sc">!!</span>lat_col) <span class="sc">%&gt;%</span></span>
+<span id="cb41-18"><a href="#cb41-18" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">filter</span>(<span class="fu">is.finite</span>(LON), <span class="fu">is.finite</span>(LAT))</span>
+<span id="cb41-19"><a href="#cb41-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-20"><a href="#cb41-20" aria-hidden="true" tabindex="-1"></a>n_dropped <span class="ot">&lt;-</span> <span class="fu">nrow</span>(climate_summary) <span class="sc">-</span> <span class="fu">nrow</span>(cs_coords)</span>
+<span id="cb41-21"><a href="#cb41-21" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (n_dropped <span class="sc">&gt;</span> <span class="dv">0</span>) <span class="fu">message</span>(<span class="st">"WorldClim extraction: dropped "</span>, n_dropped, <span class="st">" site(s) with missing/invalid coordinates."</span>)</span>
+<span id="cb41-22"><a href="#cb41-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-23"><a href="#cb41-23" aria-hidden="true" tabindex="-1"></a><span class="co"># Decide extraction engine: use terra if requested OR if object is a SpatRaster</span></span>
+<span id="cb41-24"><a href="#cb41-24" aria-hidden="true" tabindex="-1"></a>use_terra_extraction <span class="ot">&lt;-</span> <span class="fu">isTRUE</span>(params<span class="sc">$</span>use_terra) <span class="sc">||</span> <span class="fu">inherits</span>(wc, <span class="st">"SpatRaster"</span>)</span>
+<span id="cb41-25"><a href="#cb41-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-26"><a href="#cb41-26" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (use_terra_extraction) {</span>
+<span id="cb41-27"><a href="#cb41-27" aria-hidden="true" tabindex="-1"></a>  <span class="co"># --- terra path ---</span></span>
+<span id="cb41-28"><a href="#cb41-28" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="sc">!</span><span class="fu">requireNamespace</span>(<span class="st">"terra"</span>, <span class="at">quietly =</span> <span class="cn">TRUE</span>)) {</span>
+<span id="cb41-29"><a href="#cb41-29" aria-hidden="true" tabindex="-1"></a>    <span class="fu">stop</span>(<span class="st">"terra is required for SpatRaster extraction. Install with install.packages('terra') "</span>,</span>
+<span id="cb41-30"><a href="#cb41-30" aria-hidden="true" tabindex="-1"></a>         <span class="st">"or set params$use_terra: false and provide a RasterStack/Brick."</span>)</span>
+<span id="cb41-31"><a href="#cb41-31" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb41-32"><a href="#cb41-32" aria-hidden="true" tabindex="-1"></a>  site_pts <span class="ot">&lt;-</span> terra<span class="sc">::</span><span class="fu">vect</span>(</span>
+<span id="cb41-33"><a href="#cb41-33" aria-hidden="true" tabindex="-1"></a>    cs_coords,</span>
+<span id="cb41-34"><a href="#cb41-34" aria-hidden="true" tabindex="-1"></a>    <span class="at">geom =</span> <span class="fu">c</span>(<span class="st">"LON"</span>, <span class="st">"LAT"</span>),</span>
+<span id="cb41-35"><a href="#cb41-35" aria-hidden="true" tabindex="-1"></a>    <span class="at">crs  =</span> <span class="st">"EPSG:4326"</span></span>
+<span id="cb41-36"><a href="#cb41-36" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb41-37"><a href="#cb41-37" aria-hidden="true" tabindex="-1"></a>  wc_vals <span class="ot">&lt;-</span> terra<span class="sc">::</span><span class="fu">extract</span>(wc, site_pts)</span>
+<span id="cb41-38"><a href="#cb41-38" aria-hidden="true" tabindex="-1"></a>  <span class="fu">names</span>(wc_vals) <span class="ot">&lt;-</span> <span class="fu">make.names</span>(<span class="fu">names</span>(wc_vals))</span>
+<span id="cb41-39"><a href="#cb41-39" aria-hidden="true" tabindex="-1"></a>  cs_coords<span class="sc">$</span>MAT_WorldClim <span class="ot">&lt;-</span> wc_vals[[<span class="fu">grep</span>(<span class="st">"bio_1"</span>, <span class="fu">names</span>(wc_vals))[<span class="dv">1</span>]]]</span>
+<span id="cb41-40"><a href="#cb41-40" aria-hidden="true" tabindex="-1"></a>  cs_coords<span class="sc">$</span>MAP_WorldClim <span class="ot">&lt;-</span> wc_vals[[<span class="fu">grep</span>(<span class="st">"bio_12"</span>, <span class="fu">names</span>(wc_vals))[<span class="dv">1</span>]]]</span>
+<span id="cb41-41"><a href="#cb41-41" aria-hidden="true" tabindex="-1"></a>} <span class="cf">else</span> {</span>
+<span id="cb41-42"><a href="#cb41-42" aria-hidden="true" tabindex="-1"></a>  <span class="co"># --- raster fallback ---</span></span>
+<span id="cb41-43"><a href="#cb41-43" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">inherits</span>(wc, <span class="st">"SpatRaster"</span>)) {</span>
+<span id="cb41-44"><a href="#cb41-44" aria-hidden="true" tabindex="-1"></a>    wc_try <span class="ot">&lt;-</span> <span class="fu">try</span>(<span class="fu">suppressWarnings</span>(raster<span class="sc">::</span><span class="fu">stack</span>(wc)), <span class="at">silent =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb41-45"><a href="#cb41-45" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">inherits</span>(wc_try, <span class="st">"try-error"</span>)) {</span>
+<span id="cb41-46"><a href="#cb41-46" aria-hidden="true" tabindex="-1"></a>      wc_try <span class="ot">&lt;-</span> <span class="fu">try</span>(<span class="fu">suppressWarnings</span>(<span class="fu">as</span>(wc, <span class="st">"Raster"</span>)), <span class="at">silent =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb41-47"><a href="#cb41-47" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb41-48"><a href="#cb41-48" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">inherits</span>(wc_try, <span class="st">"try-error"</span>)) {</span>
+<span id="cb41-49"><a href="#cb41-49" aria-hidden="true" tabindex="-1"></a>      <span class="fu">stop</span>(<span class="st">"Could not coerce SpatRaster -&gt; Raster for raster::extract. "</span>,</span>
+<span id="cb41-50"><a href="#cb41-50" aria-hidden="true" tabindex="-1"></a>           <span class="st">"Set params$use_terra: true to use terra extraction."</span>)</span>
+<span id="cb41-51"><a href="#cb41-51" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb41-52"><a href="#cb41-52" aria-hidden="true" tabindex="-1"></a>    wc <span class="ot">&lt;-</span> wc_try</span>
+<span id="cb41-53"><a href="#cb41-53" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb41-54"><a href="#cb41-54" aria-hidden="true" tabindex="-1"></a>  sp_pts <span class="ot">&lt;-</span> sp<span class="sc">::</span><span class="fu">SpatialPoints</span>(</span>
+<span id="cb41-55"><a href="#cb41-55" aria-hidden="true" tabindex="-1"></a>    <span class="at">coords =</span> cs_coords[,<span class="fu">c</span>(<span class="st">"LON"</span>,<span class="st">"LAT"</span>)],</span>
+<span id="cb41-56"><a href="#cb41-56" aria-hidden="true" tabindex="-1"></a>    <span class="at">proj4string =</span> sp<span class="sc">::</span><span class="fu">CRS</span>(<span class="st">"+proj=longlat +datum=WGS84 +no_defs"</span>)</span>
+<span id="cb41-57"><a href="#cb41-57" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb41-58"><a href="#cb41-58" aria-hidden="true" tabindex="-1"></a>  wc_vals <span class="ot">&lt;-</span> raster<span class="sc">::</span><span class="fu">extract</span>(wc, sp_pts)</span>
+<span id="cb41-59"><a href="#cb41-59" aria-hidden="true" tabindex="-1"></a>  nm <span class="ot">&lt;-</span> <span class="fu">colnames</span>(wc_vals)</span>
+<span id="cb41-60"><a href="#cb41-60" aria-hidden="true" tabindex="-1"></a>  mat_col <span class="ot">&lt;-</span> nm[<span class="fu">grepl</span>(<span class="st">"bio_1"</span>, nm)]</span>
+<span id="cb41-61"><a href="#cb41-61" aria-hidden="true" tabindex="-1"></a>  map_col <span class="ot">&lt;-</span> nm[<span class="fu">grepl</span>(<span class="st">"bio_12"</span>, nm)]</span>
+<span id="cb41-62"><a href="#cb41-62" aria-hidden="true" tabindex="-1"></a>  cs_coords<span class="sc">$</span>MAT_WorldClim <span class="ot">&lt;-</span> wc_vals[, mat_col][,<span class="dv">1</span>]</span>
+<span id="cb41-63"><a href="#cb41-63" aria-hidden="true" tabindex="-1"></a>  cs_coords<span class="sc">$</span>MAP_WorldClim <span class="ot">&lt;-</span> wc_vals[, map_col][,<span class="dv">1</span>]</span>
+<span id="cb41-64"><a href="#cb41-64" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb41-65"><a href="#cb41-65" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-66"><a href="#cb41-66" aria-hidden="true" tabindex="-1"></a><span class="co"># Merge extracted values back into full climate_summary (by site)</span></span>
+<span id="cb41-67"><a href="#cb41-67" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (<span class="sc">!</span><span class="fu">all</span>(<span class="fu">c</span>(<span class="st">"site"</span>) <span class="sc">%in%</span> <span class="fu">names</span>(cs_coords))) {</span>
+<span id="cb41-68"><a href="#cb41-68" aria-hidden="true" tabindex="-1"></a>  cs_coords<span class="sc">$</span>site <span class="ot">&lt;-</span> climate_summary<span class="sc">$</span>site[<span class="fu">match</span>(<span class="fu">rownames</span>(cs_coords), <span class="fu">rownames</span>(climate_summary))]</span>
+<span id="cb41-69"><a href="#cb41-69" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb41-70"><a href="#cb41-70" aria-hidden="true" tabindex="-1"></a>climate_summary <span class="ot">&lt;-</span> climate_summary <span class="sc">%&gt;%</span></span>
+<span id="cb41-71"><a href="#cb41-71" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">select</span>(<span class="sc">-</span>dplyr<span class="sc">::</span><span class="fu">any_of</span>(<span class="fu">c</span>(<span class="st">"MAT_WorldClim"</span>,<span class="st">"MAP_WorldClim"</span>))) <span class="sc">%&gt;%</span></span>
+<span id="cb41-72"><a href="#cb41-72" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">left_join</span>(cs_coords <span class="sc">%&gt;%</span> dplyr<span class="sc">::</span><span class="fu">select</span>(site, MAT_WorldClim, MAP_WorldClim), <span class="at">by =</span> <span class="st">"site"</span>)</span>
+<span id="cb41-73"><a href="#cb41-73" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-74"><a href="#cb41-74" aria-hidden="true" tabindex="-1"></a><span class="co"># Convert to Whittaker axes</span></span>
+<span id="cb41-75"><a href="#cb41-75" aria-hidden="true" tabindex="-1"></a>climate_summary <span class="ot">&lt;-</span> climate_summary <span class="sc">%&gt;%</span></span>
+<span id="cb41-76"><a href="#cb41-76" aria-hidden="true" tabindex="-1"></a>  dplyr<span class="sc">::</span><span class="fu">mutate</span>(</span>
+<span id="cb41-77"><a href="#cb41-77" aria-hidden="true" tabindex="-1"></a>    <span class="at">MAT_WorldClim_C  =</span> MAT_WorldClim ,  <span class="co"># °C</span></span>
+<span id="cb41-78"><a href="#cb41-78" aria-hidden="true" tabindex="-1"></a>    <span class="at">MAP_WorldClim_cm =</span> MAP_WorldClim <span class="sc">/</span> <span class="dv">10</span>   <span class="co"># mm → cm</span></span>
+<span id="cb41-79"><a href="#cb41-79" aria-hidden="true" tabindex="-1"></a>  )</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 </div>
 </section>
@@ -1005,12 +1034,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb40"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a>p_wc_mat <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(climate_summary, <span class="fu">aes</span>(<span class="at">x =</span> MAT_WorldClim_C, <span class="at">y =</span> mean_temp)) <span class="sc">+</span></span>
-<span id="cb40-2"><a href="#cb40-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">size =</span> <span class="fl">2.5</span>, <span class="at">alpha =</span> <span class="fl">0.8</span>) <span class="sc">+</span></span>
-<span id="cb40-3"><a href="#cb40-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_abline</span>(<span class="at">slope =</span> <span class="dv">1</span>, <span class="at">intercept =</span> <span class="dv">0</span>, <span class="at">linetype =</span> <span class="st">"dashed"</span>) <span class="sc">+</span></span>
-<span id="cb40-4"><a href="#cb40-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"WorldClim MAT (°C)"</span>, <span class="at">y =</span> <span class="st">"Observed Site MAT (°C)"</span>) <span class="sc">+</span></span>
-<span id="cb40-5"><a href="#cb40-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>()</span>
-<span id="cb40-6"><a href="#cb40-6" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(p_wc_mat, <span class="st">"wc_vs_site_mat"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb42"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a>p_wc_mat <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(climate_summary, <span class="fu">aes</span>(<span class="at">x =</span> MAT_WorldClim_C, <span class="at">y =</span> mean_temp)) <span class="sc">+</span></span>
+<span id="cb42-2"><a href="#cb42-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">size =</span> <span class="fl">2.5</span>, <span class="at">alpha =</span> <span class="fl">0.8</span>) <span class="sc">+</span></span>
+<span id="cb42-3"><a href="#cb42-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_abline</span>(<span class="at">slope =</span> <span class="dv">1</span>, <span class="at">intercept =</span> <span class="dv">0</span>, <span class="at">linetype =</span> <span class="st">"dashed"</span>) <span class="sc">+</span></span>
+<span id="cb42-4"><a href="#cb42-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"WorldClim MAT (°C)"</span>, <span class="at">y =</span> <span class="st">"Observed Site MAT (°C)"</span>) <span class="sc">+</span></span>
+<span id="cb42-5"><a href="#cb42-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>()</span>
+<span id="cb42-6"><a href="#cb42-6" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(p_wc_mat, <span class="st">"wc_vs_site_mat"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div>
@@ -1021,12 +1050,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb41"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a>p_wc_map <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(climate_summary, <span class="fu">aes</span>(<span class="at">x =</span> MAP_WorldClim, <span class="at">y =</span> mean_precip)) <span class="sc">+</span></span>
-<span id="cb41-2"><a href="#cb41-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">size =</span> <span class="fl">2.5</span>, <span class="at">alpha =</span> <span class="fl">0.8</span>) <span class="sc">+</span></span>
-<span id="cb41-3"><a href="#cb41-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_abline</span>(<span class="at">slope =</span> <span class="dv">1</span>, <span class="at">intercept =</span> <span class="dv">0</span>, <span class="at">linetype =</span> <span class="st">"dashed"</span>) <span class="sc">+</span></span>
-<span id="cb41-4"><a href="#cb41-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"WorldClim MAP (mm)"</span>, <span class="at">y =</span> <span class="st">"Observed Site MAP (mm)"</span>) <span class="sc">+</span></span>
-<span id="cb41-5"><a href="#cb41-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>()</span>
-<span id="cb41-6"><a href="#cb41-6" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(p_wc_map, <span class="st">"wc_vs_site_map"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb43"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a>p_wc_map <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(climate_summary, <span class="fu">aes</span>(<span class="at">x =</span> MAP_WorldClim, <span class="at">y =</span> mean_precip)) <span class="sc">+</span></span>
+<span id="cb43-2"><a href="#cb43-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">size =</span> <span class="fl">2.5</span>, <span class="at">alpha =</span> <span class="fl">0.8</span>) <span class="sc">+</span></span>
+<span id="cb43-3"><a href="#cb43-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_abline</span>(<span class="at">slope =</span> <span class="dv">1</span>, <span class="at">intercept =</span> <span class="dv">0</span>, <span class="at">linetype =</span> <span class="st">"dashed"</span>) <span class="sc">+</span></span>
+<span id="cb43-4"><a href="#cb43-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"WorldClim MAP (mm)"</span>, <span class="at">y =</span> <span class="st">"Observed Site MAP (mm)"</span>) <span class="sc">+</span></span>
+<span id="cb43-5"><a href="#cb43-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>()</span>
+<span id="cb43-6"><a href="#cb43-6" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(p_wc_map, <span class="st">"wc_vs_site_map"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div>
@@ -1042,31 +1071,31 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb42"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a><span class="fu">data</span>(<span class="st">"Whittaker_biomes"</span>, <span class="at">package =</span> <span class="st">"plotbiomes"</span>)</span>
-<span id="cb42-2"><a href="#cb42-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb42-3"><a href="#cb42-3" aria-hidden="true" tabindex="-1"></a>my_15_colors <span class="ot">&lt;-</span> <span class="fu">c</span>(</span>
-<span id="cb42-4"><a href="#cb42-4" aria-hidden="true" tabindex="-1"></a>  <span class="st">"#1b9e77"</span>, <span class="st">"#d95f02"</span>, <span class="st">"#7570b3"</span>, <span class="st">"#e7298a"</span>, <span class="st">"#66a61e"</span>,</span>
-<span id="cb42-5"><a href="#cb42-5" aria-hidden="true" tabindex="-1"></a>  <span class="st">"#e6ab02"</span>, <span class="st">"#a6761d"</span>, <span class="st">"#666666"</span>, <span class="st">"#1f78b4"</span>, <span class="st">"#b2df8a"</span>,</span>
-<span id="cb42-6"><a href="#cb42-6" aria-hidden="true" tabindex="-1"></a>  <span class="st">"#fb9a99"</span>, <span class="st">"#fdbf6f"</span>, <span class="st">"#cab2d6"</span>, <span class="st">"#ffff99"</span>, <span class="st">"#8dd3c7"</span></span>
-<span id="cb42-7"><a href="#cb42-7" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb42-8"><a href="#cb42-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb42-9"><a href="#cb42-9" aria-hidden="true" tabindex="-1"></a>p_whittaker <span class="ot">&lt;-</span> <span class="fu">ggplot</span>() <span class="sc">+</span></span>
-<span id="cb42-10"><a href="#cb42-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_polygon</span>(</span>
-<span id="cb42-11"><a href="#cb42-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">data =</span> Whittaker_biomes,</span>
-<span id="cb42-12"><a href="#cb42-12" aria-hidden="true" tabindex="-1"></a>    <span class="fu">aes</span>(<span class="at">x =</span> temp_c, <span class="at">y =</span> precp_cm, <span class="at">group =</span> biome, <span class="at">fill =</span> biome),</span>
-<span id="cb42-13"><a href="#cb42-13" aria-hidden="true" tabindex="-1"></a>    <span class="at">color =</span> <span class="st">"grey80"</span>, <span class="at">alpha =</span> <span class="fl">0.4</span></span>
-<span id="cb42-14"><a href="#cb42-14" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
-<span id="cb42-15"><a href="#cb42-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_brewer</span>(<span class="at">palette =</span> <span class="st">"BrBG"</span>, <span class="at">name =</span> <span class="st">"Biome"</span>) <span class="sc">+</span></span>
-<span id="cb42-16"><a href="#cb42-16" aria-hidden="true" tabindex="-1"></a>  ggnewscale<span class="sc">::</span><span class="fu">new_scale_fill</span>() <span class="sc">+</span></span>
-<span id="cb42-17"><a href="#cb42-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(</span>
-<span id="cb42-18"><a href="#cb42-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">data =</span> climate_summary,</span>
-<span id="cb42-19"><a href="#cb42-19" aria-hidden="true" tabindex="-1"></a>    <span class="fu">aes</span>(<span class="at">x =</span> MAT_WorldClim_C, <span class="at">y =</span> MAP_WorldClim_cm, <span class="at">color =</span> IGBP),</span>
-<span id="cb42-20"><a href="#cb42-20" aria-hidden="true" tabindex="-1"></a>    <span class="at">size =</span> <span class="fl">2.8</span>, <span class="at">alpha =</span> <span class="fl">0.9</span></span>
-<span id="cb42-21"><a href="#cb42-21" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
-<span id="cb42-22"><a href="#cb42-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_color_manual</span>(<span class="at">values =</span> my_15_colors, <span class="at">drop =</span> <span class="cn">FALSE</span>, <span class="at">name =</span> <span class="st">"IGBP"</span>) <span class="sc">+</span></span>
-<span id="cb42-23"><a href="#cb42-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Temperature (°C)"</span>, <span class="at">y =</span> <span class="st">"Precipitation (cm yr\u207B\u00B9)"</span>) <span class="sc">+</span></span>
-<span id="cb42-24"><a href="#cb42-24" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>()</span>
-<span id="cb42-25"><a href="#cb42-25" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(p_whittaker, <span class="st">"whittaker_igbp"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb44"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a><span class="fu">data</span>(<span class="st">"Whittaker_biomes"</span>, <span class="at">package =</span> <span class="st">"plotbiomes"</span>)</span>
+<span id="cb44-2"><a href="#cb44-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-3"><a href="#cb44-3" aria-hidden="true" tabindex="-1"></a>my_15_colors <span class="ot">&lt;-</span> <span class="fu">c</span>(</span>
+<span id="cb44-4"><a href="#cb44-4" aria-hidden="true" tabindex="-1"></a>  <span class="st">"#1b9e77"</span>, <span class="st">"#d95f02"</span>, <span class="st">"#7570b3"</span>, <span class="st">"#e7298a"</span>, <span class="st">"#66a61e"</span>,</span>
+<span id="cb44-5"><a href="#cb44-5" aria-hidden="true" tabindex="-1"></a>  <span class="st">"#e6ab02"</span>, <span class="st">"#a6761d"</span>, <span class="st">"#666666"</span>, <span class="st">"#1f78b4"</span>, <span class="st">"#b2df8a"</span>,</span>
+<span id="cb44-6"><a href="#cb44-6" aria-hidden="true" tabindex="-1"></a>  <span class="st">"#fb9a99"</span>, <span class="st">"#fdbf6f"</span>, <span class="st">"#cab2d6"</span>, <span class="st">"#ffff99"</span>, <span class="st">"#8dd3c7"</span></span>
+<span id="cb44-7"><a href="#cb44-7" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb44-8"><a href="#cb44-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-9"><a href="#cb44-9" aria-hidden="true" tabindex="-1"></a>p_whittaker <span class="ot">&lt;-</span> <span class="fu">ggplot</span>() <span class="sc">+</span></span>
+<span id="cb44-10"><a href="#cb44-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_polygon</span>(</span>
+<span id="cb44-11"><a href="#cb44-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">data =</span> Whittaker_biomes,</span>
+<span id="cb44-12"><a href="#cb44-12" aria-hidden="true" tabindex="-1"></a>    <span class="fu">aes</span>(<span class="at">x =</span> temp_c, <span class="at">y =</span> precp_cm, <span class="at">group =</span> biome, <span class="at">fill =</span> biome),</span>
+<span id="cb44-13"><a href="#cb44-13" aria-hidden="true" tabindex="-1"></a>    <span class="at">color =</span> <span class="st">"grey80"</span>, <span class="at">alpha =</span> <span class="fl">0.4</span></span>
+<span id="cb44-14"><a href="#cb44-14" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
+<span id="cb44-15"><a href="#cb44-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_brewer</span>(<span class="at">palette =</span> <span class="st">"BrBG"</span>, <span class="at">name =</span> <span class="st">"Biome"</span>) <span class="sc">+</span></span>
+<span id="cb44-16"><a href="#cb44-16" aria-hidden="true" tabindex="-1"></a>  ggnewscale<span class="sc">::</span><span class="fu">new_scale_fill</span>() <span class="sc">+</span></span>
+<span id="cb44-17"><a href="#cb44-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(</span>
+<span id="cb44-18"><a href="#cb44-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">data =</span> climate_summary,</span>
+<span id="cb44-19"><a href="#cb44-19" aria-hidden="true" tabindex="-1"></a>    <span class="fu">aes</span>(<span class="at">x =</span> MAT_WorldClim_C, <span class="at">y =</span> MAP_WorldClim_cm, <span class="at">color =</span> IGBP),</span>
+<span id="cb44-20"><a href="#cb44-20" aria-hidden="true" tabindex="-1"></a>    <span class="at">size =</span> <span class="fl">2.8</span>, <span class="at">alpha =</span> <span class="fl">0.9</span></span>
+<span id="cb44-21"><a href="#cb44-21" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
+<span id="cb44-22"><a href="#cb44-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_color_manual</span>(<span class="at">values =</span> my_15_colors, <span class="at">drop =</span> <span class="cn">FALSE</span>, <span class="at">name =</span> <span class="st">"IGBP"</span>) <span class="sc">+</span></span>
+<span id="cb44-23"><a href="#cb44-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Temperature (°C)"</span>, <span class="at">y =</span> <span class="st">"Precipitation (cm yr\u207B\u00B9)"</span>) <span class="sc">+</span></span>
+<span id="cb44-24"><a href="#cb44-24" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>()</span>
+<span id="cb44-25"><a href="#cb44-25" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(p_whittaker, <span class="st">"whittaker_igbp"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div>
@@ -1077,29 +1106,29 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 <details class="code-fold">
 <summary>Code</summary>
-<div class="sourceCode cell-code" id="cb43"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a>p_whittaker_nee <span class="ot">&lt;-</span> <span class="fu">ggplot</span>() <span class="sc">+</span></span>
-<span id="cb43-2"><a href="#cb43-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_polygon</span>(</span>
-<span id="cb43-3"><a href="#cb43-3" aria-hidden="true" tabindex="-1"></a>    <span class="at">data =</span> Whittaker_biomes,</span>
-<span id="cb43-4"><a href="#cb43-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">aes</span>(<span class="at">x =</span> temp_c, <span class="at">y =</span> precp_cm, <span class="at">group =</span> biome, <span class="at">fill =</span> biome),</span>
-<span id="cb43-5"><a href="#cb43-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">color =</span> <span class="st">"grey80"</span>, <span class="at">alpha =</span> <span class="fl">0.4</span></span>
-<span id="cb43-6"><a href="#cb43-6" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
-<span id="cb43-7"><a href="#cb43-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_brewer</span>(<span class="at">palette =</span> <span class="st">"BrBG"</span>, <span class="at">name =</span> <span class="st">"Biome"</span>) <span class="sc">+</span></span>
-<span id="cb43-8"><a href="#cb43-8" aria-hidden="true" tabindex="-1"></a>  ggnewscale<span class="sc">::</span><span class="fu">new_scale_fill</span>() <span class="sc">+</span></span>
-<span id="cb43-9"><a href="#cb43-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(</span>
-<span id="cb43-10"><a href="#cb43-10" aria-hidden="true" tabindex="-1"></a>    <span class="at">data =</span> climate_summary,</span>
-<span id="cb43-11"><a href="#cb43-11" aria-hidden="true" tabindex="-1"></a>    <span class="fu">aes</span>(<span class="at">x =</span> MAT_WorldClim_C, <span class="at">y =</span> MAP_WorldClim_cm,</span>
-<span id="cb43-12"><a href="#cb43-12" aria-hidden="true" tabindex="-1"></a>        <span class="at">size =</span> <span class="fu">abs</span>(mean_NEE), <span class="at">fill =</span> NEE_sign),</span>
-<span id="cb43-13"><a href="#cb43-13" aria-hidden="true" tabindex="-1"></a>    <span class="at">shape =</span> <span class="dv">21</span>, <span class="at">color =</span> <span class="st">"black"</span>, <span class="at">alpha =</span> <span class="fl">0.9</span></span>
-<span id="cb43-14"><a href="#cb43-14" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
-<span id="cb43-15"><a href="#cb43-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_manual</span>(</span>
-<span id="cb43-16"><a href="#cb43-16" aria-hidden="true" tabindex="-1"></a>    <span class="at">values =</span> <span class="fu">c</span>(<span class="st">"Sink (NEE &lt; 0)"</span> <span class="ot">=</span> <span class="st">"#1b9e77"</span>,</span>
-<span id="cb43-17"><a href="#cb43-17" aria-hidden="true" tabindex="-1"></a>               <span class="st">"Source (NEE ≥ 0)"</span> <span class="ot">=</span> <span class="st">"#d95f02"</span>),</span>
-<span id="cb43-18"><a href="#cb43-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">name =</span> <span class="st">"NEE Sign"</span></span>
-<span id="cb43-19"><a href="#cb43-19" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
-<span id="cb43-20"><a href="#cb43-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_size_continuous</span>(<span class="at">name =</span> <span class="st">"|NEE|"</span>, <span class="at">range =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">8</span>)) <span class="sc">+</span></span>
-<span id="cb43-21"><a href="#cb43-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Temperature (°C)"</span>, <span class="at">y =</span> <span class="st">"Precipitation (cm yr\u207B\u00B9)"</span>) <span class="sc">+</span></span>
-<span id="cb43-22"><a href="#cb43-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>()</span>
-<span id="cb43-23"><a href="#cb43-23" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(p_whittaker_nee, <span class="st">"whittaker_nee"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb45"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb45-1"><a href="#cb45-1" aria-hidden="true" tabindex="-1"></a>p_whittaker_nee <span class="ot">&lt;-</span> <span class="fu">ggplot</span>() <span class="sc">+</span></span>
+<span id="cb45-2"><a href="#cb45-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_polygon</span>(</span>
+<span id="cb45-3"><a href="#cb45-3" aria-hidden="true" tabindex="-1"></a>    <span class="at">data =</span> Whittaker_biomes,</span>
+<span id="cb45-4"><a href="#cb45-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">aes</span>(<span class="at">x =</span> temp_c, <span class="at">y =</span> precp_cm, <span class="at">group =</span> biome, <span class="at">fill =</span> biome),</span>
+<span id="cb45-5"><a href="#cb45-5" aria-hidden="true" tabindex="-1"></a>    <span class="at">color =</span> <span class="st">"grey80"</span>, <span class="at">alpha =</span> <span class="fl">0.4</span></span>
+<span id="cb45-6"><a href="#cb45-6" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
+<span id="cb45-7"><a href="#cb45-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_brewer</span>(<span class="at">palette =</span> <span class="st">"BrBG"</span>, <span class="at">name =</span> <span class="st">"Biome"</span>) <span class="sc">+</span></span>
+<span id="cb45-8"><a href="#cb45-8" aria-hidden="true" tabindex="-1"></a>  ggnewscale<span class="sc">::</span><span class="fu">new_scale_fill</span>() <span class="sc">+</span></span>
+<span id="cb45-9"><a href="#cb45-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(</span>
+<span id="cb45-10"><a href="#cb45-10" aria-hidden="true" tabindex="-1"></a>    <span class="at">data =</span> climate_summary,</span>
+<span id="cb45-11"><a href="#cb45-11" aria-hidden="true" tabindex="-1"></a>    <span class="fu">aes</span>(<span class="at">x =</span> MAT_WorldClim_C, <span class="at">y =</span> MAP_WorldClim_cm,</span>
+<span id="cb45-12"><a href="#cb45-12" aria-hidden="true" tabindex="-1"></a>        <span class="at">size =</span> <span class="fu">abs</span>(mean_NEE), <span class="at">fill =</span> NEE_sign),</span>
+<span id="cb45-13"><a href="#cb45-13" aria-hidden="true" tabindex="-1"></a>    <span class="at">shape =</span> <span class="dv">21</span>, <span class="at">color =</span> <span class="st">"black"</span>, <span class="at">alpha =</span> <span class="fl">0.9</span></span>
+<span id="cb45-14"><a href="#cb45-14" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
+<span id="cb45-15"><a href="#cb45-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_manual</span>(</span>
+<span id="cb45-16"><a href="#cb45-16" aria-hidden="true" tabindex="-1"></a>    <span class="at">values =</span> <span class="fu">c</span>(<span class="st">"Sink (NEE &lt; 0)"</span> <span class="ot">=</span> <span class="st">"#1b9e77"</span>,</span>
+<span id="cb45-17"><a href="#cb45-17" aria-hidden="true" tabindex="-1"></a>               <span class="st">"Source (NEE ≥ 0)"</span> <span class="ot">=</span> <span class="st">"#d95f02"</span>),</span>
+<span id="cb45-18"><a href="#cb45-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">name =</span> <span class="st">"NEE Sign"</span></span>
+<span id="cb45-19"><a href="#cb45-19" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
+<span id="cb45-20"><a href="#cb45-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_size_continuous</span>(<span class="at">name =</span> <span class="st">"|NEE|"</span>, <span class="at">range =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">8</span>)) <span class="sc">+</span></span>
+<span id="cb45-21"><a href="#cb45-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Temperature (°C)"</span>, <span class="at">y =</span> <span class="st">"Precipitation (cm yr\u207B\u00B9)"</span>) <span class="sc">+</span></span>
+<span id="cb45-22"><a href="#cb45-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>()</span>
+<span id="cb45-23"><a href="#cb45-23" aria-hidden="true" tabindex="-1"></a><span class="fu">save_if</span>(p_whittaker_nee, <span class="st">"whittaker_nee"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </details>
 <div class="cell-output-display">
 <div>
