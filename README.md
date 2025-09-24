@@ -10,8 +10,8 @@ To produce standardized figures for the FLUXNET data
 
 ### Draft Figures
 
-- [Figures for North America Ecosystem Ecology paper](https://ecosystemecologylab.github.io/fluxnet-figures/)
+- [Figures for Annual paper](https://ecosystemecologylab.github.io/fluxnet-figures/) upating to index
 
 - [Eric's draft FLUXNET figures](https://ecosystemecologylab.github.io/fluxnet-figures/global_figures.html)
 
-- [Dave's Draft FLUXNET figures](https://ecosystemecologylab.github.io/fluxnet-figures/DemoFluxnetFigures_DM.html) upating to index
+- [Dave's Draft FLUXNET figures](https://ecosystemecologylab.github.io/fluxnet-figures/DemoFluxnetFigures_DM.html) 
