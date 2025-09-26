@@ -584,6 +584,39 @@ flag_bad_gapfilled <- function(df, gate_var, max_gapfilled = 0.5, drop_if_missin
 }
 
 
+###### getting year cleanly
+# ---- helper: robust year extractor (safe for both FULLSET and L2) ----
+year_from_df <- function(df) {
+  # Prefer explicit YEAR if present
+  if ("YEAR" %in% names(df)) {
+    y <- suppressWarnings(as.integer(df$YEAR))
+    if (any(!is.na(y))) return(y)
+  }
+  # TIMESTAMP may be numeric years (L2) or "YYYY-.." strings (rare in YY)
+  if ("TIMESTAMP" %in% names(df)) {
+    x <- df$TIMESTAMP
+    if (is.numeric(x)) {
+      y <- suppressWarnings(as.integer(x))
+      if (any(!is.na(y))) return(y)
+    }
+    if (is.character(x)) {
+      y <- suppressWarnings(as.integer(substr(x, 1, 4)))
+      if (any(!is.na(y))) return(y)
+    }
+  }
+  # Fallbacks (almost never needed for YY but harmless)
+  for (cand in c("DATE", "TIMESTAMP_START", "TIMESTAMP_END")) {
+    if (cand %in% names(df)) {
+      x <- as.character(df[[cand]])
+      y <- suppressWarnings(as.integer(substr(x, 1, 4)))
+      if (any(!is.na(y))) return(y)
+    }
+  }
+  rep(NA_integer_, nrow(df))
+}
+
+
+
 # ------------------------
 # Data Loaders
 # ------------------------
