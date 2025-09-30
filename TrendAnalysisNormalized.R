@@ -68,7 +68,7 @@ annual <- manifest %>%
 # -----------------------------------------------------------------------------
 
 # ---- user-tunable knobs ----
-qc_gate_var         <- "NEE_VUT_REF"  # e.g., "NEE_VUT_REF", "GPP_NT_VUT_REF", "LE_F", etc.
+qc_gate_var         <- c("NEE_VUT_REF", "PA_F")  # e.g., "NEE_VUT_REF", "GPP_NT_VUT_REF", "LE_F", etc.
 max_gapfilled_bad   <- 0.50           # >50% filled => bad
 drop_if_qc_missing  <- TRUE           # if QC missing at YY, drop the record
 
@@ -76,28 +76,11 @@ drop_if_qc_missing  <- TRUE           # if QC missing at YY, drop the record
 # Gate on GPP instead of NEE: qc_gate_var <- "GPP_NT_VUT_REF".
 # Keep records with missing QC: set drop_if_qc_missing <- FALSE.
 
-# helper that adds pct_gapfilled + is_bad, based on the YY QC column for the chosen var
-flag_bad_gapfilled <- function(df, gate_var, max_gapfilled = 0.5, drop_if_missing = TRUE) {
-  qc_col <- paste0(gate_var, "_QC")
-  if (!qc_col %in% names(df)) {
-    warning(sprintf("QC column `%s` not found. No filtering applied.", qc_col))
-    df$pct_gapfilled <- NA_real_
-    df$is_bad <- if (drop_if_missing) TRUE else FALSE
-    return(df)
-  }
-  pg <- df[[qc_col]]                        # fraction "good" at YY (0..1)
-  df$pct_gapfilled <- pmax(0, pmin(1, 1 - pg))  # clamp just in case
-  df$is_bad <- ifelse(
-    is.na(df$pct_gapfilled),
-    drop_if_missing,                        # drop if we can't assess quality
-    df$pct_gapfilled > max_gapfilled
-  )
-  df
-}
 
+# helper that adds pct_gapfilled + is_bad, based on the YY QC column for the chosen var
 annual_flagged <- annual |>
   flag_bad_gapfilled(
-    gate_var        = qc_gate_var,
+    gate_vars        = qc_gate_var,
     max_gapfilled   = max_gapfilled_bad,
     drop_if_missing = drop_if_qc_missing
   )
