@@ -1,48 +1,266 @@
-
-# demo_fluxnet_plots.R
-# ------------------------
-# Demonstration script for FLUXNET plotting functions
-# Requires: fcn_utility_FLUXNET.R and fcn_plot_FLUXNET.R
-# ------------------------
-
 # ---- Load source scripts (assumes they are in working directory) ----
-# Project utilities and plotting helpers
-source(file = "R/fcn_utility_FLUXNET.R")
+source(file = "R/fcn_utility_FLUXNET.R")  # contains year_from_df() helper now
 source(file = "R/fcn_plot_FLUXNET.R")
+
+# If year_from_df() wasn't sourced for any reason, define a safe fallback:
+if (!exists("year_from_df")) {
+  year_from_df <- function(df) {
+    if ("YEAR" %in% names(df)) {
+      y <- suppressWarnings(as.integer(df$YEAR))
+      if (any(!is.na(y))) return(y)
+    }
+    if ("TIMESTAMP" %in% names(df)) {
+      x <- df$TIMESTAMP
+      if (is.numeric(x)) {
+        y <- suppressWarnings(as.integer(x))
+        if (any(!is.na(y))) return(y)
+      }
+      if (is.character(x)) {
+        y <- suppressWarnings(as.integer(substr(x, 1, 4)))
+        if (any(!is.na(y))) return(y)
+      }
+    }
+    for (cand in c("DATE", "TIMESTAMP_START", "TIMESTAMP_END")) {
+      if (cand %in% names(df)) {
+        x <- as.character(df[[cand]])
+        y <- suppressWarnings(as.integer(substr(x, 1, 4)))
+        if (any(!is.na(y))) return(y)
+      }
+    }
+    rep(NA_integer_, nrow(df))
+  }
+}
 
 # -----------------------------------------------------------------------------
 # 1) Discover and load site metadata
-#    - Pulls AmeriFlux + ICOS site info; harmonizes fields (IGBP, LAT/LON, etc.)
 # -----------------------------------------------------------------------------
 metadata <- load_fluxnet_metadata()
-## Warning message about "UK" stems from countrycode ambiguity — OK to note.
+## (Note: a warning about "UK" from countrycode is expected; safe to ignore.)
 
 # -----------------------------------------------------------------------------
-# 2) Discover locally available AMF/ICOS files and build a file manifest
-#    - Manifest encodes site, dataset type (FULLSET, L2), time integral (YY, etc.)
+# 2) Discover locally available AMF/ICOS files and build a manifest
 # -----------------------------------------------------------------------------
 amf_files  <- discover_AMF_files(data_dir = here::here("data/FLUXNET/AMF"))
 icos_files <- discover_ICOS_files(data_dir = here::here("data/FLUXNET/ICOS"))
 
-# Combine and de-duplicate rows that differ only by internal path bookkeeping
-manifest <- bind_rows(amf_files, icos_files) %>%
-  distinct(
+manifest <- dplyr::bind_rows(amf_files, icos_files) %>%
+  dplyr::distinct(
     site, data_product, dataset, time_integral, start_year, end_year,
     .keep_all = TRUE
   )
 
 # -----------------------------------------------------------------------------
-# 3) Load annual (YY) FULLSET data using the manifest
-#    - Replaces -9999 sentinels with NA
-#    - Adds integer year column
-#    - Joins site metadata (IGBP, LAT/LON, etc.) to the annual records
+# 3) ICOS: Build a clean handoff table and combined ICOS annual series
+#    - FULLSET (historical, often to 2014) → L2 (from first available year)
 # -----------------------------------------------------------------------------
-annual <- manifest %>%
-  filter(time_integral == "YY", dataset == "FULLSET") %>%
-  load_fluxnet_data() %>%                                    # reads 383 files here
-  mutate(across(where(is.numeric), \(x) na_if(x, -9999))) %>%# sentinel → NA
-  mutate(year = as.integer(TIMESTAMP), .before = TIMESTAMP) %>%
-  left_join(metadata %>% select(-SITEID, -SITE_ID), by = join_by(site)) 
+
+# ICOS FLUXNET2015 FULLSET (YY)
+mani_FULL <- manifest %>%
+  dplyr::filter(data_center == "FLX",
+                data_product == "FLUXNET2015",
+                time_integral == "YY",
+                dataset == "FULLSET")
+
+# ICOS L2 (YY)
+mani_L2 <- manifest %>%
+  dplyr::filter(data_center == "ICOSETC",
+                data_product == "FLUXNET",
+                time_integral == "YY",
+                dataset == "L2")
+
+# Load buckets (no cache), clean sentinels, compute year, join metadata
+annual_full <- load_fluxnet_data(manifest = mani_FULL, cache_file = NULL) %>%
+  dplyr::mutate(across(where(is.numeric), ~ dplyr::na_if(.x, -9999))) %>%
+  dplyr::mutate(year = year_from_df(.),
+                source_bucket = "FULLSET",
+                network = "ICOS") %>%
+  dplyr::left_join(metadata %>% dplyr::select(-SITEID, -SITE_ID),
+                   by = dplyr::join_by(site))
+
+annual_l2 <- load_fluxnet_data(manifest = mani_L2, cache_file = NULL) %>%
+  dplyr::mutate(across(where(is.numeric), ~ dplyr::na_if(.x, -9999))) %>%
+  dplyr::mutate(year = year_from_df(.),
+                source_bucket = "L2",
+                network = "ICOS") %>%
+  dplyr::left_join(metadata %>% dplyr::select(-SITEID, -SITE_ID),
+                   by = dplyr::join_by(site))
+
+# Per-site ranges and bridge/handoff table
+ranges_full <- annual_full %>%
+  dplyr::filter(!is.na(year)) %>%
+  dplyr::group_by(site) %>%
+  dplyr::summarise(flx_min = min(year), flx_max = max(year), .groups = "drop")
+
+ranges_l2 <- annual_l2 %>%
+  dplyr::filter(!is.na(year)) %>%
+  dplyr::group_by(site) %>%
+  dplyr::summarise(l2_min = min(year), l2_max = max(year), .groups = "drop")
+
+bridge <- ranges_full %>%
+  dplyr::left_join(ranges_l2, by = "site") %>%
+  dplyr::mutate(
+    cliff_2014 = flx_max == 2014,
+    has_L2     = !is.na(l2_min),
+    gap_years  = dplyr::if_else(has_L2, pmax(0L, l2_min - flx_max - 1L), NA_integer_)
+  )
+
+# Clip and combine ICOS streams (avoid overlaps)
+annual_full_clip <- annual_full %>%
+  dplyr::inner_join(bridge %>% dplyr::select(site, flx_max), by = "site") %>%
+  dplyr::filter(!is.na(year) & year <= flx_max)
+
+annual_l2_clip <- annual_l2 %>%
+  dplyr::inner_join(bridge %>% dplyr::select(site, l2_min), by = "site") %>%
+  dplyr::filter(!is.na(year) & year >= l2_min)
+
+annual_icos_combined <- dplyr::bind_rows(annual_full_clip, annual_l2_clip) %>%
+  dplyr::arrange(site, year, dplyr::desc(source_bucket)) %>%  # L2 > FULLSET
+  dplyr::group_by(site, year) %>%
+  dplyr::slice(1) %>%
+  dplyr::ungroup()
+
+# Coverage tables for ICOS buckets
+cov_full <- annual_full_clip %>%
+  dplyr::count(year, name = "n_site_years") %>%
+  dplyr::mutate(bucket = "ICOS FULLSET")
+
+cov_l2 <- annual_l2_clip %>%
+  dplyr::count(year, name = "n_site_years") %>%
+  dplyr::mutate(bucket = "ICOS L2")
+
+cov_comb <- annual_icos_combined %>%
+  dplyr::count(year, name = "n_site_years") %>%
+  dplyr::mutate(bucket = "ICOS COMBINED")
+
+# -----------------------------------------------------------------------------
+# 4) AMF: Load FULLSET (YY)
+# -----------------------------------------------------------------------------
+mani_AMF_FULL <- manifest %>%
+  dplyr::filter(data_center == "AMF",
+                data_product == "FLUXNET",
+                time_integral == "YY",
+                dataset == "FULLSET")
+
+annual_amf <- load_fluxnet_data(manifest = mani_AMF_FULL, cache_file = NULL) %>%
+  dplyr::mutate(across(where(is.numeric), ~ dplyr::na_if(.x, -9999))) %>%
+  dplyr::mutate(year = year_from_df(.),
+                source_bucket = "AMF_FULLSET",
+                network = "AMF") %>%
+  dplyr::left_join(metadata %>% dplyr::select(-SITEID, -SITE_ID),
+                   by = dplyr::join_by(site))
+
+cov_amf <- annual_amf %>%
+  dplyr::filter(!is.na(year)) %>%
+  dplyr::count(year, name = "n_site_years") %>%
+  dplyr::mutate(bucket = "AMF FULLSET")
+
+
+# --- Add FLUXNET2015 SUBSET (YY) coverage panel (for reference only) ---
+mani_FLX_SUB <- manifest %>%
+  dplyr::filter(data_center == "FLX",
+                data_product == "FLUXNET2015",
+                time_integral == "YY",
+                dataset == "SUBSET")
+
+annual_flx_subset <- load_fluxnet_data(manifest = mani_FLX_SUB, cache_file = NULL) %>%
+  dplyr::mutate(across(where(is.numeric), ~ dplyr::na_if(.x, -9999))) %>%
+  dplyr::mutate(year = year_from_df(.),
+                source_bucket = "FLUXNET2015_SUBSET",
+                network = "GLOBAL-FLX2015") %>%
+  dplyr::left_join(metadata %>% dplyr::select(-SITEID, -SITE_ID),
+                   by = dplyr::join_by(site))
+
+cov_flx_subset <- annual_flx_subset %>%
+  dplyr::filter(!is.na(year)) %>%
+  dplyr::count(year, name = "n_site_years") %>%
+  dplyr::mutate(bucket = "FLUXNET2015 SUBSET")
+
+
+# 4) Coverage tables (for plotting)
+cov_full <- cov_full      # ICOS FULLSET (from earlier)
+cov_l2   <- cov_l2        # ICOS L2 (from earlier)
+cov_comb <- cov_comb      # ICOS COMBINED (from earlier)
+cov_net  <- network_combined %>%
+  dplyr::count(year, name = "n_site_years") %>%
+  dplyr::mutate(bucket = "NETWORK (stitched)")
+
+coverage_by_year_all <- dplyr::bind_rows(
+  cov_full %>% dplyr::mutate(bucket = "ICOS FULLSET"),
+  cov_l2   %>% dplyr::mutate(bucket = "ICOS L2"),
+  cov_amf,           # AMF FULLSET
+  cov_comb %>% dplyr::mutate(bucket = "ICOS COMBINED"),
+  cov_net,           # stitched network
+  cov_flx_subset     # NEW: FLUXNET2015 SUBSET reference
+) %>% dplyr::arrange(year, bucket)
+
+# 5) Plot: coverage by year (faceted)
+library(ggplot2)
+
+p_cov <- ggplot(coverage_by_year_all,
+                aes(x = year, y = n_site_years, group = bucket)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~ bucket, ncol = 1, scales = "free_y") +
+  labs(x = "Year",
+       y = "# site-years",
+       title = "Annual coverage by bucket: ICOS, AMF, Stitched Network, and FLUXNET2015 SUBSET") +
+  theme_minimal(base_size = 12)
+
+print(p_cov)
+# ggsave("coverage_by_year_network_plus_subset.png", p_cov, width = 7, height = 13, dpi = 300)
+
+# -----------------------------------------------------------------------------
+# 5) STITCH NETWORK (de-dup by site,year with precedence: ICOS_L2 > ICOS_FULLSET > AMF_FULLSET)
+# -----------------------------------------------------------------------------
+priority_map <- c(AMF_FULLSET = 1L, FULLSET = 2L, L2 = 3L)
+
+network_combined <- dplyr::bind_rows(
+  annual_amf,
+  annual_icos_combined  # already labeled with source_bucket FULLSET/L2 and network ICOS
+) %>%
+  dplyr::filter(!is.na(year)) %>%
+  dplyr::mutate(priority = priority_map[source_bucket]) %>%
+  dplyr::arrange(site, year, dplyr::desc(priority)) %>%
+  dplyr::group_by(site, year) %>%
+  dplyr::slice(1) %>%
+  dplyr::ungroup() %>%
+  dplyr::select(-priority)
+
+cov_net <- network_combined %>%
+  dplyr::count(year, name = "n_site_years") %>%
+  dplyr::mutate(bucket = "NETWORK (stitched)")
+
+# -----------------------------------------------------------------------------
+# 6) Coverage-by-year plot (ICOS buckets, AMF, and stitched network)
+# -----------------------------------------------------------------------------
+coverage_by_year_all <- dplyr::bind_rows(
+  cov_full,  # ICOS FULLSET
+  cov_l2,    # ICOS L2
+  cov_amf,   # AMF FULLSET
+  cov_comb,  # ICOS COMBINED
+  cov_net    # stitched network
+) %>% dplyr::arrange(year, bucket)
+
+library(ggplot2)
+
+p_cov <- ggplot(coverage_by_year_all,
+                aes(x = year, y = n_site_years, group = bucket)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~ bucket, ncol = 1, scales = "free_y") +
+  labs(x = "Year",
+       y = "# site-years",
+       title = "Annual coverage by bucket: ICOS, AMF, and Stitched Network") +
+  theme_minimal(base_size = 12)
+
+print(p_cov)
+# ggsave("coverage_by_year_network.png", p_cov, width = 7, height = 11, dpi = 300)
+
+# -----------------------------------------------------------------------------
+# 7) Final output table used downstream
+# -----------------------------------------------------------------------------
+annual <- network_combined
+
   
 # -----------------------------------------------------------------------------
 # 4) Gate by "percent gap-filled" at the annual scale
@@ -53,7 +271,7 @@ annual <- manifest %>%
 
 # ---- user-tunable knobs ----
 qc_gate_var         <- "NEE_VUT_REF"  # e.g., "NEE_VUT_REF", "GPP_NT_VUT_REF", "LE_F", etc.
-max_gapfilled_bad   <- 0.50           # >50% filled => bad
+max_gapfilled_bad   <- 0.70           # >50% filled => bad
 drop_if_qc_missing  <- TRUE           # if QC missing at YY, drop the record
 
 # change the rule: set max_gapfilled_bad <- 0.25 (require ≥75% “good”).
@@ -235,3 +453,194 @@ ggplot(yr_df, aes(x = year)) +
     axis.title.y.right = element_text(color = "grey30"),
     axis.text.y.right  = element_text(color = "grey30")
   )
+
+
+p_cov <- ggplot(coverage_by_year, aes(x = year, y = n_site_years, group = bucket)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~ bucket, ncol = 1, scales = "free_y") +
+  labs(x = "Year", y = "# site-years", title = "ICOS annual coverage by bucket") +
+  theme_minimal(base_size = 12)
+
+print(p_cov)
+
+
+##### WHAT IS GOING ON!?
+
+# ===============================
+# Coverage-by-year for ALL YY sets
+# ===============================
+
+library(dplyr)
+library(purrr)
+library(ggplot2)
+
+# 1) Build the list of YY / YY_INTERIM buckets from the manifest
+yy_buckets <- manifest %>%
+  filter(time_integral %in% c("YY","YY_INTERIM")) %>%
+  distinct(data_center, data_product, dataset, time_integral) %>%
+  arrange(data_center, data_product, dataset, time_integral) %>%
+  mutate(
+    bucket = paste(data_center, data_product, dataset, time_integral, sep = " / ")
+  )
+
+# 2) Helper: load one bucket and return per-year site-year counts
+compute_bucket_coverage <- function(dc, dp, ds, ti) {
+  mani_sub <- manifest %>%
+    filter(data_center == dc,
+           data_product == dp,
+           dataset == ds,
+           time_integral == ti)
+  
+  if (nrow(mani_sub) == 0) {
+    return(tibble(year = integer(), n_site_years = integer(),
+                  data_center = dc, data_product = dp, dataset = ds, time_integral = ti))
+  }
+  
+  dat <- load_fluxnet_data(manifest = mani_sub, cache_file = NULL) %>%
+    mutate(across(where(is.numeric), ~na_if(.x, -9999))) %>%
+    mutate(year = year_from_df(.)) %>%
+    filter(!is.na(year))
+  
+  dat %>%
+    count(year, name = "n_site_years") %>%
+    mutate(data_center = dc,
+           data_product = dp,
+           dataset = ds,
+           time_integral = ti)
+}
+
+# 3) Compute coverage for every bucket (map over the distinct combos)
+coverage_all <- pmap_dfr(
+  list(yy_buckets$data_center,
+       yy_buckets$data_product,
+       yy_buckets$dataset,
+       yy_buckets$time_integral),
+  compute_bucket_coverage
+) %>%
+  mutate(bucket = paste(data_center, data_product, dataset, time_integral, sep = " / "))
+
+# (optional) order facets by total site-years to make the plot easier to read
+bucket_order <- coverage_all %>%
+  group_by(bucket) %>%
+  summarise(total_sy = sum(n_site_years), .groups = "drop") %>%
+  arrange(desc(total_sy)) %>%
+  pull(bucket)
+
+coverage_all <- coverage_all %>%
+  mutate(bucket = factor(bucket, levels = bucket_order))
+
+# 4) Plot
+p_all <- ggplot(coverage_all, aes(x = year, y = n_site_years, group = bucket)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~ bucket, ncol = 2, scales = "free_y") +
+  labs(x = "Year",
+       y = "# site-years",
+       title = "Annual coverage by (data center × product × dataset × integral) — YY & YY_INTERIM") +
+  theme_minimal(base_size = 12)
+
+print(p_all)
+# ggsave("coverage_by_year_ALL_YY.png", p_all, width = 14, height = 16, dpi = 300)
+
+
+
+library(dplyr)
+library(ggplot2)
+library(purrr)
+
+# Helper to compute coverage from an already-loaded data frame
+coverage_from_df <- function(df, label) {
+  if (is.null(df) || nrow(df) == 0) return(tibble())
+  if (!"NEE_VUT_REF" %in% names(df)) return(tibble())   # skip buckets without NEE
+  df %>%
+    filter(!is.na(year)) %>%
+    count(year, name = "n_site_years") %>%
+    mutate(bucket = label)
+}
+
+# Build a list of the already-loaded buckets you care about
+preloaded <- list(
+  "ICOS FULLSET"          = annual_full,
+  "ICOS L2"               = annual_l2,
+  "AMF FULLSET"           = annual_amf
+  # If you made this earlier and want to show it too, uncomment:
+  # "FLUXNET2015 SUBSET"    = annual_flx_subset
+)
+
+coverage_by_year_NEI <- imap_dfr(preloaded, ~ coverage_from_df(.x, .y))
+
+# Order facets by total site-years
+bucket_order <- coverage_by_year_NEI %>%
+  group_by(bucket) %>% summarise(total_sy = sum(n_site_years), .groups="drop") %>%
+  arrange(desc(total_sy)) %>% pull(bucket)
+
+coverage_by_year_NEI <- coverage_by_year_NEI %>%
+  mutate(bucket = factor(bucket, levels = bucket_order))
+
+# Plot
+p_cov_nee <- ggplot(coverage_by_year_NEI,
+                    aes(x = year, y = n_site_years, group = bucket)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~ bucket, ncol = 2, scales = "free_y") +
+  labs(x = "Year", y = "# site-years",
+       title = "Annual coverage (only buckets containing NEE_VUT_REF)") +
+  theme_minimal(base_size = 12)
+
+print(p_cov_nee)
+
+
+library(dplyr)
+library(purrr)
+library(readr)
+library(tibble)
+library(stringr)
+
+# 1) Slice the manifest to YY + YY_INTERIM, keep one representative file per bucket
+yy_manifest <- manifest %>%
+  filter(time_integral %in% c("YY", "YY_INTERIM")) %>%
+  mutate(bucket = paste(data_center, data_product, dataset, time_integral, sep = " / "))
+
+# choose a representative path per bucket (first is fine)
+reps <- yy_manifest %>%
+  group_by(data_center, data_product, dataset, time_integral, bucket) %>%
+  summarise(
+    n_files   = n(),
+    example_path = first(path),
+    example_file = basename(example_path),
+    .groups = "drop"
+  )
+
+# 2) Lightweight header check: does this bucket's example file contain NEE_VUT_REF?
+check_has_nee <- function(p) {
+  out <- tryCatch(
+    {
+      hdr <- readr::read_csv(p, n_max = 0, show_col_types = FALSE)
+      list(has_nee = "NEE_VUT_REF" %in% names(hdr), note = NA_character_)
+    },
+    error = function(e) list(has_nee = NA, note = paste("read error:", e$message))
+  )
+  tibble(has_NEE_VUT_REF = out$has_nee, note = out$note)
+}
+
+nee_results <- reps$example_path %>% map_dfr(check_has_nee)
+
+# 3) Assemble the table
+yy_inventory <- reps %>%
+  bind_cols(nee_results) %>%
+  select(
+    bucket,                        # dataset "name" (data_center / product / dataset / integral)
+    example_file,                  # indicative filename
+    n_files,                       # how many files in this bucket on disk
+    has_NEE_VUT_REF,
+    note
+  ) %>%
+  arrange(bucket)
+
+# 4) Show it (and optionally write it out)
+print(yy_inventory, n = nrow(yy_inventory))
+ readr::write_csv(yy_inventory, "yy_inventory_with_nee_flag.csv")
+
+
+

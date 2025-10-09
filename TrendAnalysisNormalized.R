@@ -47,6 +47,83 @@ manifest <- bind_rows(amf_files, icos_files) %>%
     .keep_all = TRUE
   )
 
+
+# Buckets we care about (per your preference: ONLY FLUXNET2015 FULLSET + ICOS L2)
+mani_FULL <- manifest %>%
+  dplyr::filter(data_center == "FLX",
+                data_product == "FLUXNET2015",
+                time_integral == "YY",
+                dataset == "FULLSET")
+
+mani_L2 <- manifest %>%
+  dplyr::filter(data_center == "ICOSETC",
+                data_product == "FLUXNET",
+                time_integral == "YY",
+                dataset == "L2")
+
+# Load buckets fresh (no cache), clean sentinels, attach 'year'
+annual_full <- load_fluxnet_data(manifest = mani_FULL, cache_file = NULL) %>%
+  dplyr::mutate(across(where(is.numeric), ~ dplyr::na_if(.x, -9999))) %>%
+  { . ->> .annual_full_raw } %>%    # keep a raw copy if you want to inspect later
+  dplyr::mutate(year = year_from_df(.)) %>%
+  dplyr::left_join(metadata %>% dplyr::select(-SITEID, -SITE_ID),
+                   by = dplyr::join_by(site))
+
+annual_l2 <- load_fluxnet_data(manifest = mani_L2, cache_file = NULL) %>%
+  dplyr::mutate(across(where(is.numeric), ~ dplyr::na_if(.x, -9999))) %>%
+  { . ->> .annual_l2_raw } %>%
+  dplyr::mutate(year = year_from_df(.)) %>%
+  dplyr::left_join(metadata %>% dplyr::select(-SITEID, -SITE_ID),
+                   by = dplyr::join_by(site))
+
+# Per-site year ranges in each bucket
+ranges_full <- annual_full %>%
+  dplyr::filter(!is.na(year)) %>%
+  dplyr::group_by(site) %>%
+  dplyr::summarise(flx_min = min(year), flx_max = max(year), .groups = "drop")
+
+ranges_l2 <- annual_l2 %>%
+  dplyr::filter(!is.na(year)) %>%
+  dplyr::group_by(site) %>%
+  dplyr::summarise(l2_min = min(year), l2_max = max(year), .groups = "drop")
+
+# Bridge / handoff table (who ends in FULLSET and where L2 resumes)
+bridge <- ranges_full %>%
+  dplyr::left_join(ranges_l2, by = "site") %>%
+  dplyr::mutate(
+    cliff_2014 = flx_max == 2014,
+    has_L2     = !is.na(l2_min),
+    gap_years  = dplyr::if_else(has_L2, pmax(0L, l2_min - flx_max - 1L), NA_integer_)
+  )
+
+# Clip to avoid overlap and then combine
+annual_full_clip <- annual_full %>%
+  dplyr::inner_join(bridge %>% dplyr::select(site, flx_max), by = "site") %>%
+  dplyr::filter(!is.na(year) & year <= flx_max) %>%
+  dplyr::mutate(source_bucket = "FULLSET")
+
+annual_l2_clip <- annual_l2 %>%
+  dplyr::inner_join(bridge %>% dplyr::select(site, l2_min), by = "site") %>%
+  dplyr::filter(!is.na(year) & year >= l2_min) %>%
+  dplyr::mutate(source_bucket = "L2")
+
+# Combined ICOS annual series (prefer L2 if any same-year duplicates appear)
+annual_icos_combined <- dplyr::bind_rows(annual_full_clip, annual_l2_clip) %>%
+  dplyr::arrange(site, year, dplyr::desc(source_bucket)) %>%  # L2 > FULLSET on ties
+  dplyr::group_by(site, year) %>%
+  dplyr::slice(1) %>%
+  dplyr::ungroup()
+
+# (Optional) Quick coverage sanity tables
+cov_full <- annual_full_clip %>% dplyr::count(year, name = "n_site_years") %>% dplyr::mutate(bucket = "FULLSET")
+cov_l2   <- annual_l2_clip   %>% dplyr::count(year, name = "n_site_years") %>% dplyr::mutate(bucket = "L2")
+cov_comb <- annual_icos_combined %>% dplyr::count(year, name = "n_site_years") %>% dplyr::mutate(bucket = "COMBINED")
+coverage_by_year <- dplyr::bind_rows(cov_full, cov_l2, cov_comb) %>% dplyr::arrange(year, bucket)
+
+# Your “annual” object can now be:
+annual <- annual_icos_combined
+
+
 # -----------------------------------------------------------------------------
 # 3) Load annual (YY) FULLSET data using the manifest
 #    - Replaces -9999 sentinels with NA
@@ -54,11 +131,13 @@ manifest <- bind_rows(amf_files, icos_files) %>%
 #    - Joins site metadata (IGBP, LAT/LON, etc.) to the annual records
 # -----------------------------------------------------------------------------
 annual <- manifest %>%
-  filter(time_integral == "YY", dataset == "FULLSET") %>%
+  filter(time_integral == "YY", dataset %in% c("FULLSET","SUBSET", "L2")) %>%
   load_fluxnet_data() %>%                                    # reads 383 files here
   mutate(across(where(is.numeric), \(x) na_if(x, -9999))) %>%# sentinel → NA
   mutate(year = as.integer(TIMESTAMP), .before = TIMESTAMP) %>%
   left_join(metadata %>% select(-SITEID, -SITE_ID), by = join_by(site)) 
+
+
 
 # -----------------------------------------------------------------------------
 # 4) Gate by "percent gap-filled" at the annual scale
