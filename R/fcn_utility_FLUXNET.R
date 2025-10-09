@@ -561,20 +561,40 @@ load_fluxnet_metadata <- function() {
     mutate(SITEID = SITE_ID)
 }
 
-#.QA QC filters
-# helper that adds pct_gapfilled + is_bad, based on the YY QC column for the chosen var
-#
-
-flag_bad_gapfilled <- function(df, gate_var, max_gapfilled = 0.5, drop_if_missing = TRUE) {
-  qc_col <- paste0(gate_var, "_QC")
-  if (!qc_col %in% names(df)) {
-    warning(sprintf("QC column `%s` not found. No filtering applied.", qc_col))
+#' Flag gapfilled data
+#' 
+#' Helper that adds `pct_gapfilled` + `is_bad` based on the QC column for the
+#' chosen `gate_vars` columns.
+#' 
+#' @param df a data frame of annual data.
+#' @param gate_vars character vector of variable names to use for flagging.
+#' @param max_gapfilled numeric; cutoff for the `is_bad` flag to be `TRUE`.
+#' @param drop_if_missing logical; if `TRUE`, columns with `NA` for the QA get
+#'   `TRUE` for `is_bad`.
+#' 
+#' @examples
+#' annual_data %>% flag_bad_gapfilled(gate_vars = c("NEE_VUT_REF", "PA_F"))
+#' 
+flag_bad_gapfilled <- function(df, gate_vars, max_gapfilled = 0.5, drop_if_missing = TRUE) {
+  qc_cols <- paste0(gate_vars, "_QC")
+  if (all(!qc_cols %in% colnames(df))) {
+    cli::cli_warn("QC column{?s} {qc_cols} not found. No filtering applied.")
     df$pct_gapfilled <- NA_real_
-    df$is_bad <- if (drop_if_missing) TRUE else FALSE
+    df$is_bad <- isTRUE(drop_if_missing)
     return(df)
   }
-  pg <- df[[qc_col]]                        # fraction "good" at YY (0..1)
-  df$pct_gapfilled <- pmax(0, pmin(1, 1 - pg))  # clamp just in case
+
+  # works with code below becuase results of pick() is a tibble
+  # inject + !!! converts dataframe into df[[1]], df[[2]], df[[3]]...
+  pmin_df <- function(df, na.rm = TRUE) {
+    rlang::inject(pmin(!!!df, na.rm = na.rm))
+  }
+
+  df <- df %>%
+    # pct_gapfilled reflects the *most* gapfilled of the gate_vars
+    mutate(pct_gapfilled = 1 - pmin_df(pick(any_of(qc_cols)), na.rm = TRUE))
+
+  df$pct_gapfilled <- pmax(0, pmin(1, df$pct_gapfilled))  # clamp just in case
   df$is_bad <- ifelse(
     is.na(df$pct_gapfilled),
     drop_if_missing,                        # drop if we can't assess quality
