@@ -442,7 +442,7 @@ plot_interannual_variation_vs_ai_colored <- function(
       "Arid"          = "orange",
       "Semi-Arid"     = "yellow",
       "Dry Sub-Humid" = "lightgreen",
-      "Humid"         = "darkgreen"
+      "Humid"         = "grey"
     )
   }
   
@@ -651,7 +651,7 @@ plot_flux_vs_ai_colored <- function(
       "Arid"          = "orange",
       "Semi-Arid"     = "yellow",
       "Dry Sub-Humid" = "lightgreen",
-      "Humid"         = "darkgreen"
+      "Humid"         = "grey"
     ),
     ai_window = c(0, 5),
     smooth = TRUE,
