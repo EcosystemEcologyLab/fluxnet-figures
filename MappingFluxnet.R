@@ -316,6 +316,64 @@ p_na_ai_ameriflux <-
   ) +
   coord_sf(xlim = na_xlim, ylim = na_ylim, expand = FALSE)
 
+
+
+
+#---------------------
+# ARID ONLY
+#---------------------
+
+# --- Classify sites by AI and filter out "Humid" -----------------------------
+
+# Reuse the same thresholds as raster_to_aridity_df()
+classify_ai_vec <- function(ai_vec) {
+  factor(
+    dplyr::case_when(
+      is.na(ai_vec)        ~ NA_character_,
+      ai_vec < 0.05        ~ "Hyper-Arid",
+      ai_vec < 0.20        ~ "Arid",
+      ai_vec < 0.50        ~ "Semi-Arid",
+      ai_vec < 0.65        ~ "Dry Sub-Humid",
+      TRUE                 ~ "Humid"
+    ),
+    levels = c("Hyper-Arid","Arid","Semi-Arid","Dry Sub-Humid","Humid")
+  )
+}
+
+# Extract AI at each site (use the aggregated raster for speed, or AI_4km for full res)
+sites <- sites |>
+  mutate(
+    AI_at_site = raster::extract(AI_4km_agg, cbind(longitude, latitude)),
+    Aridity_Class_site = classify_ai_vec(AI_at_site)
+  )
+
+# Keep only sites not in Humid
+sites_non_humid <- sites |>
+  filter(!is.na(Aridity_Class_site), Aridity_Class_site != "Humid")
+
+# --- Plot: Global aridity background + NON-HUMID sites only ------------------
+
+p_global_ai_non_humid_only <-
+  outline_base("Global — Aridity Background with Non-Humid Sites Only") +
+  geom_raster(
+    data = ai_global_df,
+    aes(x = x, y = y, fill = Aridity_Class),
+    alpha = 0.85
+  ) +
+  scale_fill_manual(values = aridity_cols, name = "Aridity Class") +
+  geom_sf(data = land, fill = NA, color = "black", linewidth = 0.30) +
+  geom_point(
+    data = sites_non_humid,
+    aes(x = longitude, y = latitude),
+    shape = 21, fill = blue_all, color = "black",
+    size = pt_size, alpha = pt_alpha, stroke = pt_stroke
+  )
+
+# Show or save
+p_global_ai_non_humid_only
+# ggsave("maps/global_aridity_non_humid_sites.png", p_global_ai_non_humid_only, width = 11, height = 6.5, dpi = 300)
+
+
 # ---------------------------
 # 6) Show (or save)
 # ---------------------------
