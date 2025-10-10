@@ -19,8 +19,6 @@ execute:
 
 ## TODO list
 
-- Data
-  - Automated checking of data ranges? 
 - Plots
   - Scale by number of years for each date
   - Do all initial plots
@@ -31,28 +29,20 @@ execute:
 
 
 ```{r}
-#| eval: false
-# Need dev version of `amerifluxr` package to get `amf_download_fluxnet` function.
-pak::pak("chuhousen/amerifluxr")
-pak::pak("valentinitnelav/plotbiomes")
-```
-
-
-```{r}
 #| label: setup
 #| output: false
 
 library(dplyr)
 library(lubridate)
 library(ggplot2)
-library(amerifluxr)
+# library(amerifluxr)
 library(stringr)
-library(readr)
+# library(readr)
 library(purrr)
 library(tidyr)
 library(plotbiomes)
-library(measurements)
-library(ggnewscale)
+library(measurements) #for conv_unit()
+# library(ggnewscale)
 library(fs)
 library(geomtextpath)
 library(ggtext) #for subscripts in axis labels
@@ -62,196 +52,59 @@ library(ggforce) #for convex hulls in bowen ratios plot
 source("R/fcn_utility_FLUXNET.R")
 
 #set default ggplot2 theme
-theme_set(theme_classic() + theme(axis.title = element_markdown()))
-```
-
-## Download data
-
-```{r}
-amf_sites <- amerifluxr::amf_sites()
-amf_sites$COUNTRY |> unique()
-amf_sites_nam <- amf_sites |>
-  filter(COUNTRY %in% c("Mexico", "Canada", "USA")) |>
-  pull(SITE_ID)
-```
-
-Code for downloading Ameriflux data (all sites in North America)
-
-```{r}
-#| eval: false
-#| echo: true
-
-#check what sites you already have
-fluxnet_files <- tibble(
-  path = dir_ls(
-    "data/",
-    regexp = "AMF_[^_]+_FLUXNET_FULLSET_(?:YY|DD|HH|WW)_[0-9]{4}-[0-9]{4}_.*\\.csv$",
-    recurse = TRUE
-  )
-) |>
-  mutate(
-    filename = path_file(path),
-    to_split = path_ext_remove(filename)
-  ) |>
-  separate_wider_delim(
-    to_split,
-    names = c(
-      "source",
-      "SITE_ID",
-      "fluxnet",
-      "set",
-      "period",
-      "yr_range",
-      "junk"
-    ),
-    delim = "_"
-  ) |>
-  select(-fluxnet, -junk) |>
-  separate_wider_delim(
-    SITE_ID,
-    names = c("country_code", "site"),
-    delim = "-",
-    cols_remove = FALSE
-  )
-
-sites_to_dl <- setdiff(amf_sites_nam, unique(fluxnet_files$SITE_ID))
-
-
-zip_paths <- amf_download_fluxnet(
-  user_id = "Aariq",
-  user_email = "scottericr@gmail.com",
-  site_id = sites_to_dl,
-  data_product = "FLUXNET",
-  data_variant = "FULLSET",
-  data_policy = "CCBY4.0",
-  agree_policy = TRUE,
-  intended_use = "synthesis",
-  intended_use_text = "creating pipeline for standardized figures",
-  out_dir = "data/AMF"
-)
-
-# Only unzip files needed
-walk(
-  zip_paths,
-  \(zip_path) {
-    t <- c("DD", "YY", "HH") #which FULLSET CSVs to extract
-    exdir <- fs::path_ext_remove(zip_path)
-    #split apart the file name and insert `t` in the right place
-    file_vect <- zip_path |>
-      path_file() |>
-      stringr::str_split("_") |>
-      pluck(1)
-    files <- paste(
-      paste(file_vect[1:4], collapse = "_"),
-      t,
-      paste(file_vect[5:6], collapse = "_"),
-      sep = "_"
-    ) |>
-      fs::path_ext_set("csv")
-
-    unzip(zip_path, files = files, exdir = exdir)
-  },
-  .progress = TRUE
+theme_set(
+  theme_classic() +
+    theme(axis.title.y = element_markdown(), axis.title.x = element_markdown())
 )
 ```
 
-## Read in data
+## Create Data Manifest
+
+```{r}
+metadata <- load_fluxnet_metadata()
+manifest <- discover_AMF_files(data_dir = here::here("data/FLUXNET/AMF")) %>% 
+  distinct(
+    site, data_product, dataset, time_integral, start_year, end_year,
+    .keep_all = TRUE
+  )
+```
+
+## Read in Data
 
 ```{r}
 #| label: load-data
-# site_metadata <- load_fluxnet_metadata() |>
-#   filter(SITE_ID %in% amf_sites_nam)
-# fluxnet_annual <- load_and_clean_annual_data(site_metadata)
-# fluxnet_daily <- load_and_clean_daily_data(site_metadata)
 
-fluxnet_files <- tibble(
-  path = dir_ls(
-    "data/",
-    regexp = "AMF_[^_]+_FLUXNET_FULLSET_(?:YY|DD|HH|WW)_[0-9]{4}-[0-9]{4}_.*\\.csv$",
-    recurse = TRUE
-  )
-) |>
-  mutate(
-    filename = path_file(path),
-    to_split = path_ext_remove(filename)
-  ) |>
-  separate_wider_delim(
-    to_split,
-    names = c(
-      "source",
-      "SITE_ID",
-      "fluxnet",
-      "set",
-      "period",
-      "yr_range",
-      "junk"
-    ),
-    delim = "_"
-  ) |>
-  select(-fluxnet, -junk) |>
-  separate_wider_delim(
-    SITE_ID,
-    names = c("country_code", "site"),
-    delim = "-",
-    cols_remove = FALSE
-  )
-
-#check if I got all the sites
-length(unique(fluxnet_files$SITE_ID))
-length(amf_sites_nam)
-missing <- setdiff(amf_sites_nam, unique(fluxnet_files$SITE_ID))
-missing #amerifluxr says it cant find data for these
-
-# because the CSVs all have different numbers of columns, you must map read_csv
-# and rowbind the results instead of just passing the list of files to
-# read_csv() which would be faster
-
-fluxnet_annual_list <- fluxnet_files |>
-  filter(period == "YY") |>
-  pull(path) |>
-  map(read_csv)
-
-fluxnet_annual <- fluxnet_annual_list |>
-  list_rbind(names_to = "path") |>
-  left_join(fluxnet_files |> select(path, SITE_ID), by = join_by(path)) |>
-  select(-path) |>
-  relocate(SITE_ID, .before = 1) |>
+annual <- manifest %>%
+  filter(time_integral == "YY", dataset == "FULLSET") %>%
+  load_fluxnet_data() %>%                                    
   mutate(
     across(where(is.numeric), \(x) na_if(x, -9999)),
     year = as.integer(TIMESTAMP),
     .before = TIMESTAMP
-  )
+  ) %>%
+  left_join(metadata %>% select(-SITEID, -SITE_ID), by = join_by(site)) %>% 
+  select(-path) %>%
+  relocate(site, .before = 1)
 
-fluxnet_daily_list <- fluxnet_files |>
-  filter(period == "DD") |>
-  pull(path) |>
-  map(read_csv)
-
-fluxnet_daily <- fluxnet_daily_list |>
-  list_rbind(names_to = "path") |>
-  left_join(fluxnet_files |> select(path, SITE_ID), by = join_by(path)) |>
-  select(-path) |>
-  relocate(SITE_ID, .before = 1) |>
+daily <- manifest %>%
+  filter(time_integral == "DD", dataset == "FULLSET") %>% 
+  load_fluxnet_data() %>%
   mutate(
     across(where(is.numeric), \(x) na_if(x, -9999)),
     date = lubridate::ymd(TIMESTAMP),
+    doy = yday(date),
     .before = TIMESTAMP
-  )
-
-#mrege in site "metadata"
-site_metadata <- load_fluxnet_metadata()
-fluxnet_daily <- left_join(fluxnet_daily, site_metadata, by = join_by(SITE_ID))
-fluxnet_annual <- left_join(
-  fluxnet_annual,
-  site_metadata,
-  by = join_by(SITE_ID)
-)
+  ) %>% 
+  left_join(metadata %>% select(-SITEID, -SITE_ID), by = join_by(site)) %>% 
+  select(-path) %>%
+  relocate(site, .before = 1)
 ```
 
 ```{r}
 #| label: plot-labs
 
-#set up all the possible plot labels as objects for easy reference.  These get formatted by `marquee`
+# Set up all the possible plot labels as objects for easy reference.  
+# These get formatted by `ggtext`
 
 lab_precip_annual <- "Precipitation (mm y<sup>-1</sup>)"
 lab_gpp_daily <- "GPP (g C m<sup>-2</sup> d<sup>-1</sup>)"
@@ -264,11 +117,19 @@ lab_reco_annual <- "RECO (g C m<sup>-2</sup> yr<sup>-1</sup>)"
 
 ## QA/QC
 
-2 sites have annual precip > 6000mm—that's gotta be an error
+One site has annual precip > 60,000mm and several sites have grater than 10,000mm.  These are likely errors.  Wikipedia tells me Columbia has the highest annual precip at 3,240mm/yr
 
 ```{r}
-fluxnet_annual <- fluxnet_annual |> filter(P_F < 6000)
+#| code-fold: show
+ggplot(annual, aes(P_F)) + geom_histogram()
 ```
+
+```{r}
+#| code-fold: show
+annual <- annual %>% filter(P_F < 7500)
+ggplot(annual, aes(P_F)) + geom_histogram()
+```
+
 
 ## Figures
 
@@ -291,11 +152,10 @@ window_size <- 51
 ```
 
 ```{r}
-#| code-fold: true
 #| warning: false
 
-total_ts_gpp <- fluxnet_daily %>%
-  filter(SITE_ID == first(SITE_ID)) |>
+total_ts_gpp <- daily %>%
+  filter(site == last(site)) |>
   mutate(
     running_mean_gpp = stats::filter(
       GPP_NT_VUT_REF,
@@ -313,8 +173,8 @@ ggplot(total_ts_gpp, aes(x = date, y = GPP_NT_VUT_REF)) +
   geom_vline(xintercept = yr_start_dates, color = "grey", alpha = 0.5) +
   labs(x = "Date", y = lab_gpp_daily)
 
-total_ts_reco <- fluxnet_daily %>%
-  filter(SITE_ID == first(SITE_ID)) |>
+total_ts_reco <- daily %>%
+  filter(site == last(site)) |>
   mutate(
     running_mean_reco = stats::filter(
       RECO_NT_VUT_REF,
@@ -328,8 +188,8 @@ ggplot(total_ts_reco, aes(x = date, y = RECO_NT_VUT_REF)) +
   geom_vline(xintercept = yr_start_dates, color = "grey", alpha = 0.5) +
   labs(x = "Date", y = lab_reco_daily)
 
-total_ts_nee <- fluxnet_daily %>%
-  filter(SITE_ID == first(SITE_ID)) |>
+total_ts_nee <- daily %>%
+  filter(site == last(site)) |>
   mutate(
     running_mean_nee = stats::filter(
       NEE_VUT_REF,
@@ -350,8 +210,9 @@ Same smoother as used for single site.
 
 ```{r}
 #| warning: false
-total_ts_ms <- fluxnet_daily %>%
-  group_by(SITE_ID) %>%
+#| 
+total_ts_ms <- daily %>%
+  group_by(site) %>%
   mutate(
     running_mean_gpp = stats::filter(
       GPP_NT_VUT_REF,
@@ -385,16 +246,15 @@ ggplot(
     y = GPP_NT_VUT_REF,
     color = COUNTRY,
     fill = COUNTRY,
-    group = SITE_ID
+    group = site
   )
 ) +
-  geom_point(size = 0.1, alpha = 0.1, key_glyph = draw_key_rect) +
+  geom_point(size = 0.1, alpha = 0.1) +
   geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
   geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
   facet_grid(vars(IGBP)) +
-  guides(colour = guide_legend(override.aes = list(alpha = 1))) +
-  labs(x = "Date", y = lab_gpp_daily) +
-  theme(panel.background = element_rect(color = "black"))
+  guides(color = guide_legend(override.aes = list(alpha = 1, size = 3))) +
+  labs(x = "Date", y = lab_gpp_daily) 
 
 ggplot(
   total_ts_ms,
@@ -403,16 +263,15 @@ ggplot(
     y = RECO_NT_VUT_REF,
     color = COUNTRY,
     fill = COUNTRY,
-    group = SITE_ID
+    group = site
   )
 ) +
-  geom_point(size = 0.1, alpha = 0.1, key_glyph = draw_key_rect) +
+  geom_point(size = 0.1, alpha = 0.1) +
   geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
   geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
   facet_grid(vars(IGBP)) +
-  guides(colour = guide_legend(override.aes = list(alpha = 1))) +
-  labs(x = "Date", y = lab_reco_daily) +
-  theme(panel.background = element_rect(color = "black"))
+  guides(colour = guide_legend(override.aes = list(alpha = 1, size = 3))) +
+  labs(x = "Date", y = lab_reco_daily)
 
 ggplot(
   total_ts_ms,
@@ -421,26 +280,26 @@ ggplot(
     y = NEE_VUT_REF,
     color = COUNTRY,
     fill = COUNTRY,
-    group = SITE_ID
+    group = site
   )
 ) +
-  geom_point(size = 0.1, alpha = 0.1, key_glyph = draw_key_rect) +
+  geom_point(size = 0.1, alpha = 0.1) +
   geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
   geom_hline(yintercept = 0, color = "grey", alpha = 0.5, linetype = "dashed") +
   facet_grid(vars(IGBP)) +
-  guides(colour = guide_legend(override.aes = list(alpha = 1))) +
-  labs(x = "Date", y = lab_nee_daily) +
-  theme(panel.background = element_rect(color = "black"))
+  guides(colour = guide_legend(override.aes = list(alpha = 1, size = 3))) +
+  labs(x = "Date", y = lab_nee_daily) 
 ```
 
 Show entire time series of GPP for all sites, with daily values smoothed out as a line. 
+
 ```{r}
 #| code-fold: true
 #| warning: false
 
 ggplot(
   total_ts_ms,
-  aes(x = date, y = running_mean_gpp, color = COUNTRY, group = SITE_ID)
+  aes(x = date, y = running_mean_gpp, color = COUNTRY, group = site)
 ) +
   geom_line(lwd = 0.5, alpha = 0.7) +
   geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
@@ -451,7 +310,7 @@ ggplot(
 
 ggplot(
   total_ts_ms,
-  aes(x = date, y = running_mean_reco, color = COUNTRY, group = SITE_ID)
+  aes(x = date, y = running_mean_reco, color = COUNTRY, group = site)
 ) +
   geom_line(lwd = 0.5, alpha = 0.7) +
   geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
@@ -462,7 +321,7 @@ ggplot(
 
 ggplot(
   total_ts_ms,
-  aes(x = date, y = running_mean_nee, color = COUNTRY, group = SITE_ID)
+  aes(x = date, y = running_mean_nee, color = COUNTRY, group = site)
 ) +
   geom_line(lwd = 0.5, alpha = 0.7) +
   geom_vline(xintercept = yr_start_dates_ms, color = "grey", alpha = 0.5) +
@@ -480,71 +339,59 @@ Show average daily values (with standard deviations)
 #| code-fold: true
 
 # get averages by date across years
-gpp_by_date <- fluxnet_daily %>%
-  filter(SITE_ID == first(SITE_ID)) |>
-  mutate(date_minus_year = format(date, '%m-%d')) %>%
-  group_by(date_minus_year) %>%
-  summarize(gpp_mean = mean(GPP_NT_VUT_REF), gpp_sd = sd(GPP_NT_VUT_REF)) %>%
-  mutate(date_fake_year = ymd(paste0("2024-", date_minus_year)))
+gpp_by_date <- daily %>%
+  filter(site == last(site)) |>
+  group_by(doy) %>%
+  summarize(
+    gpp_mean = mean(GPP_NT_VUT_REF, na.rm = TRUE),
+    gpp_sd = sd(GPP_NT_VUT_REF, na.rm = TRUE)
+  )
 
-ggplot(gpp_by_date, aes(x = date_fake_year, y = gpp_mean)) +
+ggplot(gpp_by_date, aes(x = doy, y = gpp_mean)) +
   geom_ribbon(
     aes(ymax = gpp_mean + gpp_sd, ymin = gpp_mean - gpp_sd),
     fill = "grey"
   ) +
   geom_point() +
   labs(
-    x = "Date",
-    # y = "Mean GPP +/- SD"
+    x = "DOY",
     y = lab_gpp_daily
-  ) +
-  # theme_minimal() +
-  scale_x_date(date_labels = "%B")
+  )
 
-reco_by_date <- fluxnet_daily %>%
-  filter(SITE_ID == first(SITE_ID)) |>
-  mutate(date_minus_year = format(date, '%m-%d')) %>%
-  group_by(date_minus_year) %>%
+reco_by_date <- daily %>%
+  filter(site == last(site)) |>
+  group_by(doy) %>%
   summarize(
     reco_mean = mean(RECO_NT_VUT_REF),
     reco_sd = sd(RECO_NT_VUT_REF)
-  ) %>%
-  mutate(date_fake_year = ymd(paste0("2024-", date_minus_year)))
+  )
 
-ggplot(reco_by_date, aes(x = date_fake_year, y = reco_mean)) +
+ggplot(reco_by_date, aes(x = doy, y = reco_mean)) +
   geom_ribbon(
     aes(ymax = reco_mean + reco_sd, ymin = reco_mean - reco_sd),
     fill = "grey"
   ) +
   geom_point() +
   labs(
-    x = "Date",
-    # y = "Mean RECO +/- SD"
+    x = "DOY",
     y = lab_reco_daily
-  ) +
-  # theme_minimal() +
-  scale_x_date(date_labels = "%B")
+  )
 
-nee_by_date <- fluxnet_daily %>%
-  filter(SITE_ID == first(SITE_ID)) |>
-  mutate(date_minus_year = format(date, '%m-%d')) %>%
-  group_by(date_minus_year) %>%
-  summarize(nee_mean = mean(NEE_VUT_REF), nee_sd = sd(NEE_VUT_REF)) %>%
-  mutate(date_fake_year = ymd(paste0("2024-", date_minus_year)))
+nee_by_date <- daily %>%
+  filter(site == last(site)) |>
+  group_by(doy) %>%
+  summarize(nee_mean = mean(NEE_VUT_REF), nee_sd = sd(NEE_VUT_REF))
 
-ggplot(nee_by_date, aes(x = date_fake_year, y = nee_mean)) +
+ggplot(nee_by_date, aes(x = doy, y = nee_mean)) +
   geom_ribbon(
     aes(ymax = nee_mean + nee_sd, ymin = nee_mean - nee_sd),
     fill = "grey"
   ) +
   geom_point() +
   labs(
-    x = "Date",
-    # y = "Mean NEE +/- SD"
+    x = "DOY",
     y = lab_nee_daily
-  ) +
-  # theme_minimal() +
-  scale_x_date(date_labels = "%B")
+  ) 
 
 ```
 
@@ -557,12 +404,10 @@ Textbook figures:
 Show average daily values by site (symbols) and vegetation type (colors)
 
 ```{r}
-#| code-fold: true
 #| warning: false
 
-gpp_by_date_sites <- fluxnet_daily %>%
-  mutate(date_minus_year = format(date, '%m-%d')) %>%
-  group_by(SITE_ID, COUNTRY, IGBP, date_minus_year) %>%
+gpp_by_date_sites <- daily %>%
+  group_by(site, COUNTRY, IGBP, doy) %>%
   summarize(
     gpp_mean = mean(GPP_NT_VUT_REF),
     gpp_sd = sd(GPP_NT_VUT_REF),
@@ -570,42 +415,38 @@ gpp_by_date_sites <- fluxnet_daily %>%
     reco_sd = sd(RECO_NT_VUT_REF),
     nee_mean = mean(NEE_VUT_REF),
     nee_sd = sd(NEE_VUT_REF)
-  ) %>%
-  mutate(date_fake_year = ymd(paste0("2024-", date_minus_year)))
+  )
 
 gpp_by_date_sites |>
   group_by(COUNTRY) |>
   #some countries have no data
   filter(!all(is.na(gpp_mean))) |>
-  ggplot(aes(x = date_fake_year, y = gpp_mean)) +
+  ggplot(aes(x = doy, y = gpp_mean)) +
   facet_wrap(vars(IGBP)) +
   geom_point(aes(color = COUNTRY)) +
-  scale_x_date(date_labels = "%B") +
-  labs(x = "Date", y = lab_gpp_daily) +
+  labs(x = "DOY", y = lab_gpp_daily) +
   theme_minimal() +
-  theme(axis.title = element_markdown())
+  theme(axis.title.y = element_markdown())
 
 gpp_by_date_sites |>
   group_by(COUNTRY) |>
   filter(!all(is.na(reco_mean))) |>
-  ggplot(aes(x = date_fake_year, y = reco_mean)) +
+  ggplot(aes(x = doy, y = reco_mean)) +
   facet_wrap(vars(IGBP)) +
   geom_point(aes(color = COUNTRY)) +
-  labs(x = "Date", y = lab_reco_daily) +
-  scale_x_date(date_labels = "%B") +
+  labs(x = "DOY", y = lab_reco_daily) +
   theme_minimal() +
-  theme(axis.title = element_markdown())
+  theme(axis.title.y = element_markdown())
 
 gpp_by_date_sites |>
   group_by(COUNTRY) |>
   filter(!all(is.na(nee_mean))) |>
-  ggplot(aes(x = date_fake_year, y = nee_mean)) +
+  ggplot(aes(x = doy, y = nee_mean)) +
   facet_wrap(vars(IGBP)) +
   geom_point(aes(color = COUNTRY)) +
-  scale_x_date(date_labels = "%B") +
-  labs(x = "Date", y = lab_nee_daily) +
+  labs(x = "DOY", y = lab_nee_daily) +
   theme_minimal() +
-  theme(axis.title = element_markdown())
+  theme(axis.title.y = element_markdown())
 
 ```
 
@@ -630,24 +471,24 @@ Show annual precipitation, summed from daily data, against three main variables 
 #| code-fold: true
 #| warning: false
 
-fluxnet_annual |>
+annual |>
   filter(!is.na(GPP_NT_VUT_REF)) |>
   ggplot(aes(x = P_F, y = GPP_NT_VUT_REF)) +
-  geom_point(aes(color = IGBP, group = SITE_ID)) +
+  geom_point(aes(color = IGBP, group = site)) +
   geom_smooth(se = FALSE, color = "black") +
   labs(x = lab_precip_annual, y = lab_gpp_annual)
 
-fluxnet_annual |>
+annual |>
   filter(!is.na(RECO_NT_VUT_REF)) |>
   ggplot(aes(x = P_F, y = RECO_NT_VUT_REF)) +
-  geom_point(aes(color = IGBP, group = SITE_ID)) +
+  geom_point(aes(color = IGBP, group = site)) +
   geom_smooth(se = FALSE, color = "black") +
   labs(x = lab_precip_annual, y = lab_reco_annual)
 
-fluxnet_annual |>
+annual |>
   filter(!is.na(NEE_VUT_REF)) |>
   ggplot(aes(x = P_F, y = NEE_VUT_REF)) +
-  geom_point(aes(color = IGBP, group = SITE_ID)) +
+  geom_point(aes(color = IGBP, group = site)) +
   geom_smooth(se = FALSE, color = "black") +
   labs(x = lab_precip_annual, y = lab_nee_annual)
 ```
@@ -658,21 +499,21 @@ Show annual temperature, averaged from daily data, against three main variables 
 #| code-fold: true
 #| warning: false
 
-fluxnet_annual |>
+annual |>
   ggplot(aes(x = TA_F, y = GPP_NT_VUT_REF)) +
-  geom_point(aes(color = IGBP, group = SITE_ID)) +
+  geom_point(aes(color = IGBP, group = site)) +
   geom_smooth(se = FALSE, color = "black") +
   labs(x = "Temperature (ºC)", y = lab_gpp_annual)
 
-fluxnet_annual |>
+annual |>
   ggplot(aes(x = TA_F, y = RECO_NT_VUT_REF)) +
-  geom_point(aes(color = IGBP, group = SITE_ID)) +
+  geom_point(aes(color = IGBP, group = site)) +
   geom_smooth(se = FALSE, color = "black") +
   labs(x = "Temperature (ºC)", y = lab_reco_annual)
 
-fluxnet_annual |>
+annual |>
   ggplot(aes(x = TA_F, y = NEE_VUT_REF)) +
-  geom_point(aes(color = IGBP, group = SITE_ID)) +
+  geom_point(aes(color = IGBP, group = site)) +
   geom_smooth(se = FALSE, color = "black") +
   labs(x = "Temperature (ºC)", y = lab_nee_annual)
 ```
@@ -692,7 +533,7 @@ Textbook figure (for NPP):
 ![](textbook_figures/interannual_meteo_comp.png)
 
 ```{r}
-ggplot(fluxnet_annual, aes(x = P_F, y = GPP_NT_VUT_REF)) +
+ggplot(annual, aes(x = P_F, y = RECO_NT_VUT_REF)) +
   geom_smooth(se = FALSE, color = "black", linewidth = 0.5) +
   # geom_smooth(se = FALSE, aes(color = site), method = "lm") +
   geom_textsmooth(
@@ -704,7 +545,7 @@ ggplot(fluxnet_annual, aes(x = P_F, y = GPP_NT_VUT_REF)) +
     # textcolor = "black",
     size = 3
   ) +
-  labs(x = lab_precip_annual, y = lab_gpp_annual) +
+  labs(x = lab_precip_annual, y = lab_reco_annual) +
   guides(color = "none")
 ```
 
@@ -741,9 +582,9 @@ Show average daily summer-only sensible vs latent heat flux (i.e., Bowen ratio) 
 ```{r}
 #| code-fold: true
 
-multiple_sites_flux <- fluxnet_daily %>%
+multiple_sites_flux <- daily %>%
   filter(month(date) %in% c(6:8)) %>% #filter to include summer only
-  group_by(SITE_ID, IGBP) %>%
+  group_by(site, IGBP) %>%
   summarize(
     latent_heat_flux = mean(LE_F_MDS),
     sensible_heat_flux = mean(H_F_MDS)
@@ -784,22 +625,11 @@ ggplot(
   ) +
   theme(
     panel.border = element_rect(fill = NA),
-    axis.title = element_markdown(),
-    # axis.ticks.x.top = element_blank(),
-    # axis.text.x.top = element_blank(),
-    # axis.ticks.y.right = element_blank(),
-    # axis.text.y.right = element_blank()
+    axis.title = element_markdown()
   )
-
 
 ```
 
-::: {.callout-tip}
-## Questions
-
-1. Should watts be converted to megajoules for the heat flux variables? *No, people will be more likely to expect Wm-2*
-2. Are heat flux values expected to be negative, especially for sensible heat flux? 
-:::
 
 ### Biome plot
 
@@ -810,6 +640,7 @@ Textbook figure:
 The R package [`plotbiomes`](https://github.com/valentinitnelav/plotbiomes) can be used to recreate the base plot here, which is referred to as a [Whittaker plot](https://en.wikipedia.org/wiki/Biome#Whittaker_(1962,_1970,_1975)_biome-types). It includes a dataset of temperature, precipitation, and associated biome. 
 
 ```{r}
+#| include: false
 data("Whittaker_biomes")
 head(Whittaker_biomes)
 unique(Whittaker_biomes$biome)
@@ -818,18 +649,15 @@ unique(Whittaker_biomes$biome)
 Get mean values of annual precipitation (P_F) and temperature (TA_F) for each site, and convert precipitation to match Whittaker dataset units (mm/yr to cm/yr). 
 
 ```{r}
-whittaker_format <- fluxnet_annual %>%
-  group_by(SITE_ID) %>%
-  summarize(mean_precip = mean(P_F), mean_temp = mean(TA_F)) %>%
-  mutate(mean_precip_cm = conv_unit(mean_precip, "mm", "cm")) %>%
-  left_join(site_metadata, by = join_by(SITE_ID))
+whittaker_format <- annual %>%
+  group_by(site, IGBP) %>%
+  summarize(mean_precip = mean(P_F, na.rm = TRUE), mean_temp = mean(TA_F, na.rm = TRUE)) %>%
+  mutate(mean_precip_cm = conv_unit(mean_precip, "mm", "cm"))
 ```
 
 Show mean annual precipitation and temperature of each site over Whittaker biome. 
 
 ```{r}
-#| code-fold: true
-
 ggplot() +
   geom_polygon(
     data = Whittaker_biomes,
@@ -850,7 +678,8 @@ ggplot() +
     aes(x = mean_temp, y = mean_precip_cm, color = IGBP)
   ) +
   # scale_color_brewer(palette = "Set1") +
-  labs(x = "Temperature (C)", y = "Precipitation (cm y-1)")
+  labs(x = "Temperature (C)", y = "Precipitation (cm y-1)") +
+  guides(color = guide_legend(ncol = 3))
 ```
 
 ::: {.callout-tip}
