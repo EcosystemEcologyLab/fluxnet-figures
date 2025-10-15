@@ -75,7 +75,7 @@ ggplot() +
     na.rm = TRUE
   ) +
   scale_fill_continuous_diverging(
-    name = "NEE (g C m<sup>-2</sup> yr<sup>-1</sup>)"
+    name = "NEE (g C m<sup>-2</sup> y<sup>-1</sup>)"
   ) +
   geom_polygon(
     data = borders_df,
@@ -89,6 +89,6 @@ ggplot() +
     labels = names(Ricklefs_colors),
     values = Ricklefs_colors,
   )  +
-  labs(x = "Temperature (C)", y = "Precipitation (cm y-1)") +
+  labs(x = "Temperature (C)", y = "Precipitation (cm y<sup>-1</sup>)") +
   theme_minimal() +
-  theme(legend.title = element_markdown())
+  theme(legend.title = element_markdown(), axis.title.y = element_markdown())
