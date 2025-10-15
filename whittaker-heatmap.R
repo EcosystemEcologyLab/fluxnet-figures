@@ -80,7 +80,7 @@ ggplot() +
   geom_polygon(
     data = borders_df,
     aes(x = temp_c, y = precip_cm, color = biome),
-    linewidth = 1.5,  # <- might need to tweak this number
+    linewidth = 1.5, # <- might need to tweak this number
     fill = NA
   ) +
   scale_color_manual(
@@ -88,7 +88,7 @@ ggplot() +
     breaks = names(Ricklefs_colors),
     labels = names(Ricklefs_colors),
     values = Ricklefs_colors,
-  )  +
+  ) +
   labs(x = "Temperature (C)", y = "Precipitation (cm y<sup>-1</sup>)") +
   theme_minimal() +
   theme(legend.title = element_markdown(), axis.title.y = element_markdown())
