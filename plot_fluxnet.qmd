@@ -406,46 +406,51 @@ Show average daily values by site (symbols) and vegetation type (colors)
 ```{r}
 #| warning: false
 
-gpp_by_date_sites <- daily %>%
-  group_by(site, COUNTRY, IGBP, doy) %>%
-  summarize(
-    gpp_mean = mean(GPP_NT_VUT_REF),
-    gpp_sd = sd(GPP_NT_VUT_REF),
-    reco_mean = mean(RECO_NT_VUT_REF),
-    reco_sd = sd(RECO_NT_VUT_REF),
-    nee_mean = mean(NEE_VUT_REF),
-    nee_sd = sd(NEE_VUT_REF)
-  )
+# Get mean by week and IGBP
+flux_weekly <-
+  daily %>%
+  mutate(week = week(date), .after = doy) %>%
+  group_by(IGBP, week) %>%
+  summarize(across(c(GPP_NT_VUT_REF, RECO_NT_VUT_REF, NEE_VUT_REF), \(x) {
+    mean(x, na.rm = TRUE)
+  })) %>%
+  # create a fake date to use as axis labels
+  mutate(fake_date = ymd("2020-01-01") + weeks(week))
 
-gpp_by_date_sites |>
-  group_by(COUNTRY) |>
-  #some countries have no data
-  filter(!all(is.na(gpp_mean))) |>
-  ggplot(aes(x = doy, y = gpp_mean)) +
-  facet_wrap(vars(IGBP)) +
-  geom_point(aes(color = COUNTRY)) +
-  labs(x = "DOY", y = lab_gpp_daily) +
-  theme_minimal() +
+ggplot(
+  flux_weekly,
+  aes(x = fake_date, y = GPP_NT_VUT_REF, color = IGBP, shape = IGBP)
+) +
+  geom_point() +
+  geom_line() +
+  scale_color_discrete_qualitative() +
+  scale_shape_manual(values = 0:16) +
+  scale_x_date(date_breaks = "months", date_labels = "%b") +
+  labs(x = "", y = lab_gpp_daily) +
   theme(axis.title.y = element_markdown())
 
-gpp_by_date_sites |>
-  group_by(COUNTRY) |>
-  filter(!all(is.na(reco_mean))) |>
-  ggplot(aes(x = doy, y = reco_mean)) +
-  facet_wrap(vars(IGBP)) +
-  geom_point(aes(color = COUNTRY)) +
-  labs(x = "DOY", y = lab_reco_daily) +
-  theme_minimal() +
+ggplot(
+  flux_weekly,
+  aes(x = fake_date, y = NEE_VUT_REF, color = IGBP, shape = IGBP)
+) +
+  geom_point() +
+  geom_line() +
+  scale_color_discrete_qualitative() +
+  scale_shape_manual(values = 0:16) +
+  scale_x_date(date_breaks = "months", date_labels = "%b") +
+  labs(x = "", y = lab_nee_daily) +
   theme(axis.title.y = element_markdown())
 
-gpp_by_date_sites |>
-  group_by(COUNTRY) |>
-  filter(!all(is.na(nee_mean))) |>
-  ggplot(aes(x = doy, y = nee_mean)) +
-  facet_wrap(vars(IGBP)) +
-  geom_point(aes(color = COUNTRY)) +
-  labs(x = "DOY", y = lab_nee_daily) +
-  theme_minimal() +
+ggplot(
+  flux_weekly,
+  aes(x = fake_date, y = RECO_NT_VUT_REF, color = IGBP, shape = IGBP)
+) +
+  geom_point() +
+  geom_line() +
+  scale_color_discrete_qualitative() +
+  scale_shape_manual(values = 0:16) +
+  scale_x_date(date_breaks = "months", date_labels = "%b") +
+  labs(x = "", y = lab_reco_daily) +
   theme(axis.title.y = element_markdown())
 
 ```
