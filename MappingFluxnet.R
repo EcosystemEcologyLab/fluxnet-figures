@@ -384,3 +384,46 @@ p_na_ai_ameriflux
  ggsave("maps/global_aridity_all_blue.png", p_global_ai_all_blue, width = 11, height = 6.5, dpi = 300)
  ggsave("maps/north_america_aridity_ameriflux_registry.png", p_na_ai_ameriflux, width = 10, height = 7, dpi = 300)
 
+ 
+ 
+ 
+ 
+ library(sf)
+ library(dplyr)
+ library(readr)
+ library(ggplot2)
+ library(stringr)
+ library(scales)
+ 
+ # 1) Download & read county boundaries
+ zip_url <- "https://www2.census.gov/geo/tiger/GENZ2024/shp/cb_2024_us_county_5m.zip"
+ zip_file <- tempfile(fileext = ".zip")
+ download.file(zip_url, zip_file, mode = "wb")
+ unzip(zip_file, exdir = tempdir())
+ counties <- st_read(list.files(tempdir(), pattern = "cb_2024_us_county_5m\\.shp$", full.names = TRUE), quiet = TRUE)
+ 
+ # 2) Read county population data (Vintage 2024)
+ pop_url <- "https://www2.census.gov/programs-surveys/popest/datasets/2020-2024/counties/totals/CO-EST2024-ALLDATA.csv"
+ pop <- read_csv(pop_url, show_col_types = FALSE) |>
+   mutate(
+     STATEFP = str_pad(STATE, 2, pad = "0"),
+     COUNTYFP = str_pad(COUNTY, 3, pad = "0"),
+     GEOID = paste0(STATEFP, COUNTYFP)
+   ) |>
+   select(GEOID, POPESTIMATE2024)
+ 
+ # 3) Join to shapefile
+ mapdat <- counties |>
+   mutate(GEOID = as.character(GEOID)) |>
+   left_join(pop, by = "GEOID")
+ 
+ # 4) Plot
+ ggplot(mapdat) +
+   geom_sf(aes(fill = POPESTIMATE2024), linewidth = 0) +
+   scale_fill_viridis_c(trans = "log10", labels = label_comma(), option = "C") +
+   labs(title = "U.S. County Population (Vintage 2024)",
+        subtitle = "Population estimates as of July 1, 2024",
+        fill = "Population") +
+   theme_minimal() +
+   theme(axis.text = element_blank(),
+         panel.grid = element_blank())
