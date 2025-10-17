@@ -263,7 +263,7 @@ annual <- network_combined
 
   
 # -----------------------------------------------------------------------------
-# 4) Gate by "percent gap-filled" at the annual scale
+# Gate by "percent gap-filled" at the annual scale
 #    - We use the *_QC that accompanies your gating variable at YY.
 #    - For NEE: NEE_VUT_REF_QC in [0..1]. We interpret (1 - QC) as % gap-filled.
 #    - Default rule: "bad" if > 50% gap-filled (you can change this easily).
@@ -272,7 +272,7 @@ annual <- network_combined
 # ---- user-tunable knobs ----
 
 qc_gate_var         <- c("NEE_VUT_REF", "PA_F")  # e.g., "NEE_VUT_REF", "GPP_NT_VUT_REF", "LE_F", etc.
-max_gapfilled_bad   <- 0.50           # >50% filled => bad
+max_gapfilled_bad   <- 0.75           # >75% filled => bad
 drop_if_qc_missing  <- TRUE           # if QC missing at YY, drop the record
 
 # change the rule: set max_gapfilled_bad <- 0.25 (require ≥75% “good”).
