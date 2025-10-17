@@ -71,7 +71,7 @@ ggplot() +
     aes(x = temp_c, y = precip_cm, z = NEE),
     stat = "summary_hex",
     bins = 40,
-    fun = mean,
+    fun = median,
     na.rm = TRUE
   ) +
   scale_fill_continuous_diverging(
