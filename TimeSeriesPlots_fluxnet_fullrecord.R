@@ -15,6 +15,8 @@ library(ggnewscale)
 library(forcats)
 library(minpack.lm) #for phenology code
 library(patchwork)
+library(splines)
+
 # ------------------------
 # Example Usage
 # ------------------------
@@ -917,45 +919,47 @@ compare_worldclim_siteclimate <- function(annual_data, site_metadata) {
 # Phenology Detection via Integral Smoothing
 # ------------------------
 
-#' detect_phenology_integral: Estimate phenological transition dates via integral smoothing
+#' detect_phenology_integral: Estimate phenological transition dates via
+#' integral smoothing
 #'
-#' @param daily_data A dataframe with daily time series data including a 'site', 'date_object', and flux variable (e.g., GPP).
+#' @param daily_data A dataframe with daily time series data including a 'site',
+#' 'date_object', and flux variable (e.g., GPP).
 #' @param knots Number of knots for spline smoothing (default = 10).
 #' @param flux_var Flux variable to analyze, typically "GPP_NT_VUT_REF".
 #' @return A list containing:
-#'   - phenology_df: A dataframe with columns site, year, SOS (start of season), POS (peak of season), and EOS (end of season).
-#'   - issues_df: A dataframe logging problematic records (e.g., SOS = 1, missing values, or temporal ordering issues).
+#'   - phenology_df: A dataframe with columns site, year, SOS (start of season),
+#'     POS (peak of season), and EOS (end of season).
+#'   - issues_df: A dataframe logging problematic records (e.g., SOS = 1,
+#'     missing values, or temporal ordering issues).
 #'
-#' @details This method uses a cumulative-sum-based smoothing technique. The data is padded with ±30 days on either end of each year,
-#' spline-smoothed, and differentiated to obtain a smooth GPP curve. SOS and EOS are based on 20% of the max smoothed value, and POS is the day of peak.
+#' @details This method uses a cumulative-sum-based smoothing technique. The
+#' data is padded with ±30 days on either end of each year, spline-smoothed, and
+#' differentiated to obtain a smooth GPP curve. SOS and EOS are based on 20% of
+#' the max smoothed value, and POS is the day of peak.
 #'
-#' This approach increases signal-to-noise ratio and is more robust to parameter choices than direct smoothing.
+#' This approach increases signal-to-noise ratio and is more robust to parameter
+#' choices than direct smoothing.
 #'
-#' Note: Requires 'date_object' as a Date column and assumes daily temporal resolution.
+#' Note: Assumes daily temporal resolution and requires a `LOCATION_LAT` column
+#' to be in `daily_data`
 
-detect_phenology_integral <- function(daily_data, knots = 10, flux_var = "GPP_NT_VUT_REF") {
-  library(splines)
-  library(dplyr)
-  
-  if (!"date_object" %in% names(daily_data)) {
-    stop("daily_data must contain 'date_object' column as Date")
-  }
-  
+detect_phenology_integral <- function(daily_data, knots = 10, date_var = "date_object", flux_var = "GPP_NT_VUT_REF") {
+ 
   daily_data <- daily_data %>%
     filter(!is.na(.data[[flux_var]])) %>%
     mutate(
-      year = lubridate::year(date_object),
-      DOY = lubridate::yday(date_object),
-      hemisphere = ifelse(LOCATION_LAT < 0, "SH", "NH"),
+      year = lubridate::year(.data[[date_var]]),
+      DOY = lubridate::yday(.data[[date_var]]),
+      hemisphere = if_else(LOCATION_LAT < 0, "SH", "NH"),
       climate_zone = case_when(
         abs(LOCATION_LAT) < 23.5 ~ "Tropical",
         abs(LOCATION_LAT) >= 23.5 & LOCATION_LAT >= 0 ~ "Temperate_North",
         abs(LOCATION_LAT) >= 23.5 & LOCATION_LAT < 0 ~ "Temperate_South",
-        TRUE ~ "Other"
+        .default =  "Other"
       ),
       DOY_aligned = case_when(
         climate_zone == "Temperate_South" ~ (DOY + 182) %% 365,
-        TRUE ~ DOY
+        .default = DOY
       )
     )
   
@@ -976,7 +980,7 @@ detect_phenology_integral <- function(daily_data, knots = 10, flux_var = "GPP_NT
       padded_data <- bind_rows(prev_data, year_data, next_data)
       
       padded_data <- padded_data %>%
-        arrange(date_object) %>%
+        arrange(.data[[date_var]]) %>%
         mutate(cumflux = cumsum(.data[[flux_var]]))
       
       if (nrow(padded_data) < knots) next
@@ -987,7 +991,7 @@ detect_phenology_integral <- function(daily_data, knots = 10, flux_var = "GPP_NT
         
         smoothed_gpp <- tibble(
           site = site_id,
-          date = padded_data$date_object,
+          date = padded_data[[date_var]],
           DOY = padded_data$DOY,
           DOY_aligned = padded_data$DOY_aligned,
           year = padded_data$year,
