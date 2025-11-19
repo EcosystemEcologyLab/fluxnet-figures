@@ -208,10 +208,6 @@ detect_phenology_integral_site <- function(
         abs(LOCATION_LAT) >= 23.5 & LOCATION_LAT >= 0 ~ "Temperate_North",
         abs(LOCATION_LAT) >= 23.5 & LOCATION_LAT < 0 ~ "Temperate_South",
         .default = "Other"
-      ),
-      DOY_aligned = case_when(
-        climate_zone == "Temperate_South" ~ (DOY + 182) %% 365,
-        .default = DOY
       )
     )
   if (nrow(daily_site) == 0) {
@@ -221,17 +217,31 @@ detect_phenology_integral_site <- function(
     unique(daily_site$year) %>%
     sort()
 
-  smooths <- map(years, \(year) {
-    start <- make_date(year) - days(30)
-    end <- ceiling_date(make_date(year), "year") + days(29)
+  smooths <- map(years, \(focal_year) {
+    start <- make_date(focal_year) - days(30)
+    end <- ceiling_date(make_date(focal_year), "year") + days(29)
 
-    
-    # TODO possibly adjust DOY of padded years so the previous year's are -1, 
-    # -2, etc. and the next year's are 366, 367, 368, etc. just for better 
+    # TODO possibly adjust DOY of padded years so the previous year's are -1,
+    # -2, etc. and the next year's are 366, 367, 368, etc. just for better
     # plotting?
     padded_data <- daily_site %>%
       filter(between(date, start, end)) %>%
       arrange(date) %>%
+      mutate(year = focal_year) %>%
+      mutate(
+        DOY_padded = case_when(
+          year(date) == focal_year - 1 ~ (date - make_date(focal_year)) %>%
+            as.numeric("days"),
+          year(date) == focal_year + 1 ~ DOY + 365 + leap_year(focal_year),
+          .default = DOY
+        )
+      ) %>%
+      mutate(
+        DOY_aligned = case_when(
+          climate_zone == "Temperate_South" ~ (DOY_padded + 182) %% 365,
+          .default = DOY_padded
+        )
+      ) %>%
       mutate(cumflux = cumsum(GPP_NT_VUT_MEAN))
 
     m <- smooth.spline(
@@ -249,9 +259,11 @@ detect_phenology_integral_site <- function(
       max_flux <- max(df$smooth, na.rm = TRUE)
       df %>%
         summarize(
-          SOS = DOY[which.max(smooth >= max_flux * 0.2)],
-          POS = DOY[smooth == max_flux],
-          EOS = DOY[which.max(smooth <= max_flux * 0.2 & DOY > POS)],
+          SOS = DOY_padded[which.max(smooth >= max_flux * 0.2)],
+          POS = DOY_padded[smooth == max_flux],
+          EOS = DOY_padded[which.max(
+            smooth <= max_flux * 0.2 & DOY_padded > POS
+          )],
           climate_zone = unique(climate_zone),
           site = unique(site)
         ) %>%
@@ -273,7 +285,7 @@ detect_phenology_integral_site <- function(
   if (isTRUE(keep_data)) {
     smooths_min <- smooths %>%
       map(\(df) {
-        df %>% select(date, all_of(flux_var), DOY, DOY_aligned, smooth)
+        df %>% select(date, all_of(flux_var), DOY, DOY_padded, DOY_aligned, smooth)
       })
     out$data <- smooths_min
   }
@@ -284,8 +296,8 @@ detect_phenology_integral_site <- function(
 
 ```{r}
 library(bench)
-set.seed(3267)
-sample_sites <- sample(unique(daily$site), 8)
+set.seed(100)
+sample_sites <- sample(unique(daily$site), 10)
 daily_sample <- daily %>% filter(site %in% sample_sites)
 bm <- bench::mark(
   old = detect_phenology_integral(daily_sample, date_var = "date", flux_var = "GPP_NT_VUT_MEAN"),
@@ -295,7 +307,7 @@ bm <- bench::mark(
 bm
 ```
 
-Yeah, that cuts the compute time reduces memory allocated quite a bit.
+Yeah, that cuts the compute time reduces memory allocated a little bit.
 
 How does it fare with the entire Ameriflux dataset?
 
@@ -313,21 +325,25 @@ Only about 30 seconds.
 Let's take a look at the two sites suggested, US-Ha1 and US-SRM:
 
 ```{r}
-pheno_all %>% 
-  filter(site == "US-Ha1") %>% 
+pheno_all %>%
+  mutate(flag = !is.na(issues)) %>%
+  filter(site == "US-Ha1") %>%
   ggplot(aes(y = year)) +
-  geom_pointrange(aes(x = POS, xmin = SOS, xmax = EOS, color = is.na(issues))) +
-  labs(title = "US-Ha1", color = "OK", x = "Season range (DOY)")
+  geom_pointrange(aes(x = POS, xmin = SOS, xmax = EOS, color = flag)) +
+  scale_color_manual(values = c("FALSE" = "black", "TRUE" = "red")) +
+  labs(title = "US-Ha1", color = "Issues", x = "Season range (DOY)")
 
-pheno_all %>% 
-  filter(site == "US-SRM") %>% 
+pheno_all %>%
+  mutate(flag = !is.na(issues)) %>%
+  filter(site == "US-SRM") %>%
   ggplot(aes(y = year)) +
-  geom_pointrange(aes(x = POS, xmin = SOS, xmax = EOS, color = is.na(issues))) +
-  labs(title = "US-SRM", color = "OK", x = "Season range (DOY)")
+  geom_pointrange(aes(x = POS, xmin = SOS, xmax = EOS, color = flag)) +
+  scale_color_manual(values = c("FALSE" = "black", "TRUE" = "red")) +
+  labs(title = "US-SRM", color = "Issues", x = "Season range (DOY)")
  
 ```
 
-Both have a year with a flag.  Let's take a closer look.
+US-Ha1 has a year with a flag and US-SRM has a year with a suspiciously early POS.  Let's take a closer look.
 
 ```{r}
 pheno_all %>% 
@@ -337,60 +353,43 @@ pheno_all %>%
   ggplot(aes(x = date)) +
   geom_point(aes(y = GPP_NT_VUT_MEAN), alpha = 0.3) +
   geom_line(aes(y = smooth), color = "blue") +
-  labs(title = "US-Ha1")
+  labs(title = "US-Ha1 (1991)")
 ```
 
 Here it looks like we just didn't capture the SOS because there isn't sufficient "padding" in the first year of data.
 
 ```{r}
-pheno_all %>% 
+pheno_all %>%
   filter(site == "US-SRM") %>%
-  filter(!is.na(issues)) %>%
-  unnest(data) %>% 
+  filter(year == 2020) %>%
+  unnest(data) %>%
   ggplot(aes(x = date)) +
   geom_point(aes(y = GPP_NT_VUT_MEAN), alpha = 0.3) +
   geom_line(aes(y = smooth), color = "blue") +
-  labs(title = "US-SRM")
+  labs(title = "US-SRM (2020)")
 ```
 
-Here we have some multi-modal seasonality, so it is unsurprising that this method didn't detect the season correctly. The first peak is at DOY 55 and is higher than the second peak.  The other problem is that the start of the season is in the previous year at DOY 336.  I think we should code buffer year DOYs differently so they don't overlap with the focal year.
+Here we have some multi-modal seasonality, so it is unsurprising that this method didn't detect the season correctly. The first peak is at DOY 55 and is higher than the second peak.
 
-e.g.
-
-```{r}
-pheno_all %>% 
-  filter(site == "US-SRM") %>%
-  filter(!is.na(issues)) %>%
-  unnest(data) %>% 
-  mutate(DOY_adj = case_when(
-    year(date) == year - 1 ~ (date - make_date(year)) %>% as.numeric('days'),
-    year(date) == year + 1 ~ DOY + 365 + leap_year(year),
-    .default = DOY
-  )) %>% pull(DOY_adj) %>% range()
-```
 
 ```{r}
 pheno_all %>%
   filter(site == "US-Ha1") %>%
   unnest(data) %>%
-  # remove the "padding" dates for easier plotting
-  filter(year == year(date)) %>%
-  ggplot(aes(x = DOY, y = smooth, color = year, group = year)) +
+  ggplot(aes(x = DOY_padded, y = smooth, color = year, group = year)) +
   geom_line() +
   scale_color_continuous(n.breaks = 8) +
-  labs(title = "US-Ha1")
+  labs(title = "US-Ha1", x = "DOY")
 
 pheno_all %>%
   filter(site == "US-SRM") %>%
   unnest(data) %>%
-  # remove the "padding" dates for easier plotting
-  filter(year == year(date)) %>%
-  ggplot(aes(x = DOY, y = smooth, color = year, group = year)) +
+  ggplot(aes(x = DOY_padded, y = smooth, color = year, group = year)) +
   geom_line() +
   scale_color_continuous(n.breaks = 8) +
-  labs(title = "US-SRM")
+  labs(title = "US-SRM", x = "DOY")
 ```
 
 ## What about other methods?
 
-@panwar2023 mentions other methods besides using a 20% threshold.
+If there is interest, `detect_phenology_integral2()` could be modified to accept different thresholds (or even a vector of thresholds, outputing columns like `SOS_0.2`, `SOS_0.5`, etc.) or to use the first derivative method for detecting SOS and EOS.
