@@ -24,7 +24,7 @@ manifest <-
   group_by(site) %>%
   filter(end_year == max(end_year)) %>% 
   ungroup()
-# daily <- load_fluxnet_data(manifest) # Don't actually want to read in all sites at once due to memory issues
+# daily <- load_fluxnet_data(manifest) # Don't actually want to read in everything due to memory issues
 ```
 
 ```{r}
@@ -221,9 +221,8 @@ detect_phenology_integral_site <- function(
     start <- make_date(focal_year) - days(30)
     end <- ceiling_date(make_date(focal_year), "year") + days(29)
 
-    # TODO possibly adjust DOY of padded years so the previous year's are -1,
-    # -2, etc. and the next year's are 366, 367, 368, etc. just for better
-    # plotting?
+    # TODO need to actually split the data differently in the southern 
+    # hemisphere so the "center" is 6-months offset
     padded_data <- daily_site %>%
       filter(between(date, start, end)) %>%
       arrange(date) %>%
@@ -236,6 +235,9 @@ detect_phenology_integral_site <- function(
           .default = DOY
         )
       ) %>%
+      # TODO do we still need this?  I think this is just for plotting southern
+      # hemisphere and northern hemisphere sites on the same x-axis, but I 
+      # think I'd rather let the user do this outside of this function.
       mutate(
         DOY_aligned = case_when(
           climate_zone == "Temperate_South" ~ (DOY_padded + 182) %% 365,
