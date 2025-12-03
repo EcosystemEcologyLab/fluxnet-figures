@@ -23,9 +23,6 @@
 #' @param keep_data Logical; if TRUE, the output contains a list column with the
 #'   raw and fitted data that can be used, e.g., for plotting the smoothed fit for
 #'   each site.
-
-# TODO: fix southern hemisphere sites.  The way the data is split by year needs
-# to be handled differently so the "center" of the year is offset by 6 months.
 detect_phenology_integral <- function(
   daily,
   knots = 10,
@@ -59,6 +56,10 @@ detect_phenology_integral_site <- function(
   threshold = 0.2,
   keep_data = FALSE
 ) {
+  method <- match.arg(method)
+  if(method == 'derivative') {
+    stop("The derivative method is not implemented yet!  Please use `method = 'threshold'`.")
+  }
   daily_site <- daily_site %>%
     filter(!is.na(.data[[flux_var]])) %>%
     mutate(
@@ -80,11 +81,16 @@ detect_phenology_integral_site <- function(
     sort()
 
   smooths <- map(years, \(focal_year) {
-    start <- make_date(focal_year) - days(30)
-    end <- ceiling_date(make_date(focal_year), "year") + days(29)
+    hemisphere <- unique(daily_site$hemisphere)
+    if (hemisphere == "NH") {
+      start <- make_date(focal_year) - days(30)
+      end <- ceiling_date(make_date(focal_year), "year") + days(29)
+      # Shift center of period 6 months forward if in southern hemisphere
+    } else {
+      start <- make_date(focal_year) - days(30) + months(6)
+      end <- ceiling_date(make_date(focal_year), "year") + days(29) + months(6)
+    }
 
-    # TODO need to actually split the data differently in the southern 
-    # hemisphere so the "center" is 6-months offset
     padded_data <- daily_site %>%
       filter(between(date, start, end)) %>%
       arrange(date) %>%
@@ -97,19 +103,10 @@ detect_phenology_integral_site <- function(
           .default = DOY
         )
       ) %>%
-      # TODO do we still need this?  I think this is just for plotting southern
-      # hemisphere and northern hemisphere sites on the same x-axis, but I 
-      # think I'd rather let the user do this outside of this function.
-      mutate(
-        DOY_aligned = case_when(
-          climate_zone == "Temperate_South" ~ (DOY_padded + 182) %% 365,
-          .default = DOY_padded
-        )
-      ) %>%
       mutate(cumflux = cumsum(GPP_NT_VUT_MEAN))
 
     m <- smooth.spline(
-      x = 1:nrow(padded_data),
+      x = padded_data$DOY_padded,
       y = padded_data$cumflux,
       df = knots
     )
@@ -149,7 +146,7 @@ detect_phenology_integral_site <- function(
   if (isTRUE(keep_data)) {
     smooths_min <- smooths %>%
       map(\(df) {
-        df %>% select(date, all_of(flux_var), DOY, DOY_padded, DOY_aligned, smooth)
+        df %>% select(date, all_of(flux_var), DOY, DOY_padded, smooth)
       })
     out$data <- smooths_min
   }
