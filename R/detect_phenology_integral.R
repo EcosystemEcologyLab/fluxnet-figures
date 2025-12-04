@@ -1,15 +1,15 @@
 #' Detect start and end of season from daily GPP data
-#' 
+#'
 #' An implementation of the method described by Panwar et al. (2023) to detect
 #' the start and end of season using smoothed, cumulative GPP data.
-#' 
+#'
 #' @author Eric R. Scott
-#' @references 
+#' @references
 #' Panwar, A., Migliavacca, M., Nelson, J.A., Cortés, J., Bastos, A., Forkel,
 #' M., Winkler, A.J., 2023. Methodological challenges and new perspectives of
 #' shifting vegetation phenology in eddy covariance data. Sci Rep 13, 13885.
 #' https://doi.org/10.1038/s41598-023-41048-x
-#' 
+#'
 #' @param daily Daily flux data including at least a `site` column, a column for
 #'   date (specified by `date_var`) and a column for GPP or another flux
 #'   (specified by `flux_var`).
@@ -33,17 +33,19 @@ detect_phenology_integral <- function(
   keep_data = FALSE
 ) {
   daily %>%
-    group_split(site) %>%
-    map(\(df) {
+    dplyr::group_split(site) %>%
+    purrr::map(\(df) {
       detect_phenology_integral_site(
         df,
         knots = knots,
         date_var = date_var,
         flux_var = flux_var,
+        method = method,
+        threshold = threshold,
         keep_data = keep_data
       )
     }) %>%
-    list_rbind()
+    purrr::list_rbind()
 }
 
 #' Just for one site
@@ -57,16 +59,18 @@ detect_phenology_integral_site <- function(
   keep_data = FALSE
 ) {
   method <- match.arg(method)
-  if(method == 'derivative') {
-    stop("The derivative method is not implemented yet!  Please use `method = 'threshold'`.")
+  if (method == 'derivative') {
+    stop(
+      "The derivative method is not implemented yet!  Please use `method = 'threshold'`."
+    )
   }
   daily_site <- daily_site %>%
-    filter(!is.na(.data[[flux_var]])) %>%
-    mutate(
+    dplyr::filter(!is.na(.data[[flux_var]])) %>%
+    dplyr::mutate(
       year = lubridate::year(.data[[date_var]]),
       DOY = lubridate::yday(.data[[date_var]]),
-      hemisphere = if_else(LOCATION_LAT < 0, "SH", "NH"),
-      climate_zone = case_when(
+      hemisphere = dplyr::if_else(LOCATION_LAT < 0, "SH", "NH"),
+      climate_zone = dplyr::case_when(
         abs(LOCATION_LAT) < 23.5 ~ "Tropical",
         abs(LOCATION_LAT) >= 23.5 & LOCATION_LAT >= 0 ~ "Temperate_North",
         abs(LOCATION_LAT) >= 23.5 & LOCATION_LAT < 0 ~ "Temperate_South",
@@ -74,36 +78,44 @@ detect_phenology_integral_site <- function(
       )
     )
   if (nrow(daily_site) == 0) {
-    return(tibble())
+    return(dplyr::tibble())
   }
   years <-
     unique(daily_site$year) %>%
     sort()
 
-  smooths <- map(years, \(focal_year) {
+  smooths <- purrr::map(years, \(focal_year) {
     hemisphere <- unique(daily_site$hemisphere)
     if (hemisphere == "NH") {
-      start <- make_date(focal_year) - days(30)
-      end <- ceiling_date(make_date(focal_year), "year") + days(29)
+      start <- lubridate::make_date(focal_year) - lubridate::days(30)
+      end <- lubridate::ceiling_date(lubridate::make_date(focal_year), "year") +
+        lubridate::days(29)
       # Shift center of period 6 months forward if in southern hemisphere
     } else {
-      start <- make_date(focal_year) - days(30) + months(6)
-      end <- ceiling_date(make_date(focal_year), "year") + days(29) + months(6)
+      start <- lubridate::make_date(focal_year) -
+        lubridate::days(30) +
+        months(6)
+      end <- lubridate::ceiling_date(lubridate::make_date(focal_year), "year") +
+        lubridate::days(29) +
+        months(6)
     }
 
     padded_data <- daily_site %>%
-      filter(between(date, start, end)) %>%
-      arrange(date) %>%
-      mutate(year = focal_year) %>%
-      mutate(
-        DOY_padded = case_when(
-          year(date) == focal_year - 1 ~ (date - make_date(focal_year)) %>%
+      dplyr::filter(dplyr::between(date, start, end)) %>%
+      dplyr::arrange(date) %>%
+      dplyr::mutate(year = focal_year) %>%
+      dplyr::mutate(
+        DOY_padded = dplyr::case_when(
+          lubridate::year(date) == focal_year - 1 ~ (date -
+            lubridate::make_date(focal_year)) %>%
             as.numeric("days"),
-          year(date) == focal_year + 1 ~ DOY + 365 + leap_year(focal_year),
+          lubridate::year(date) == focal_year + 1 ~ DOY +
+            365 +
+            lubridate::leap_year(focal_year),
           .default = DOY
         )
       ) %>%
-      mutate(cumflux = cumsum(GPP_NT_VUT_MEAN))
+      dplyr::mutate(cumflux = cumsum(GPP_NT_VUT_MEAN))
 
     m <- smooth.spline(
       x = padded_data$DOY_padded,
@@ -111,15 +123,15 @@ detect_phenology_integral_site <- function(
       df = knots
     )
 
-    bind_cols(padded_data, smooth = predict(m, deriv = 1)$y)
+    dplyr::bind_cols(padded_data, smooth = predict(m, deriv = 1)$y)
   }) %>%
-    set_names(years)
+    purrr::set_names(years)
 
   out <- smooths %>%
-    map(\(df) {
+    purrr::map(\(df) {
       max_flux <- max(df$smooth, na.rm = TRUE)
       df %>%
-        summarize(
+        dplyr::summarize(
           SOS = DOY_padded[which.max(smooth >= max_flux * threshold)],
           POS = DOY_padded[smooth == max_flux],
           EOS = DOY_padded[which.max(
@@ -128,8 +140,8 @@ detect_phenology_integral_site <- function(
           climate_zone = unique(climate_zone),
           site = unique(site)
         ) %>%
-        mutate(
-          issues = case_when(
+        dplyr::mutate(
+          issues = dplyr::case_when(
             is.na(SOS) | is.na(POS) | is.na(EOS) ~ "NA for SOS, POS, or EOS",
             SOS == 1 ~ "SOS == 1 (possibly spurrious)",
             climate_zone != "Tropical" &&
@@ -138,15 +150,16 @@ detect_phenology_integral_site <- function(
           )
         )
     }) %>%
-    list_rbind(names_to = "year") %>%
-    mutate(year = as.integer(year)) %>%
-    select(site, year, SOS, POS, EOS, issues)
+    purrr::list_rbind(names_to = "year") %>%
+    dplyr::mutate(year = as.integer(year)) %>%
+    dplyr::select(site, year, SOS, POS, EOS, issues)
 
   # optionaly keep the original data as a list column for plotting
   if (isTRUE(keep_data)) {
     smooths_min <- smooths %>%
-      map(\(df) {
-        df %>% select(date, all_of(flux_var), DOY, DOY_padded, smooth)
+      purrr::map(\(df) {
+        df %>%
+          dplyr::select(date, dplyr::all_of(flux_var), DOY, DOY_padded, smooth)
       })
     out$data <- smooths_min
   }
