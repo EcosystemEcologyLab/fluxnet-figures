@@ -184,7 +184,7 @@ detect_phenology_integral_site <- function(
       purrr::map(\(df) {
         df %>%
           dplyr::select(
-            dplyr::all_of(date_var, flux_var),
+            dplyr::all_of(c(date_var, flux_var)),
             DOY,
             DOY_padded,
             smooth
