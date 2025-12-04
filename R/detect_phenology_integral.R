@@ -77,6 +77,11 @@ detect_phenology_integral_site <- function(
       "The derivative method is not implemented yet!  Please use `method = 'threshold'`."
     )
   }
+  # If there are duplicated dates, the fitted values from the spline won't match
+  # up with the data
+  if(anyDuplicated(daily_site[[date_var]]) > 0) {
+    cli::cli_abort("Duplicate dates detected in site {unique(daily_site$site)}")
+  }
   daily_site <- daily_site %>%
     dplyr::filter(!is.na(.data[[flux_var]])) %>%
     dplyr::mutate(
@@ -90,13 +95,17 @@ detect_phenology_integral_site <- function(
         .default = "Other"
       )
     )
+  
+  # If there's no flux data for a site, no point in going further
   if (nrow(daily_site) == 0) {
     return(dplyr::tibble())
   }
+
   years <-
     unique(daily_site$year) %>%
     sort()
-
+  
+  # Fit smooth to cumulative flux
   smooths <- purrr::map(years, \(focal_year) {
     hemisphere <- unique(daily_site$hemisphere)
     if (hemisphere == "NH") {
@@ -112,7 +121,9 @@ detect_phenology_integral_site <- function(
         lubridate::days(29) +
         months(6)
     }
-
+    
+    # For each "focal year" subset data such that it includes dates from the
+    # previous and next years
     padded_data <- daily_site %>%
       dplyr::filter(dplyr::between(.data[[date_var]], start, end)) %>%
       dplyr::arrange(.data[[date_var]]) %>%
@@ -131,8 +142,7 @@ detect_phenology_integral_site <- function(
       dplyr::mutate(cumflux = cumsum(GPP_NT_VUT_MEAN))
 
     m <- smooth.spline(
-      # x = padded_data$DOY_padded,
-      x = 1:nrow(padded_data),
+      x = padded_data$DOY_padded, 
       y = padded_data$cumflux,
       df = knots
     )
@@ -173,7 +183,12 @@ detect_phenology_integral_site <- function(
     smooths_min <- smooths %>%
       purrr::map(\(df) {
         df %>%
-          dplyr::select(dplyr::all_of(date_var, flux_var), DOY, DOY_padded, smooth)
+          dplyr::select(
+            dplyr::all_of(date_var, flux_var),
+            DOY,
+            DOY_padded,
+            smooth
+          )
       })
     out$data <- smooths_min
   }

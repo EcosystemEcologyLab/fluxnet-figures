@@ -1216,10 +1216,15 @@ plot_phenology_timeseries <- function(phenology_df, site_metadata, metric = c("L
 #daily_data <- load_and_clean_daily_data()
 plot_seasonal_cycle(daily_data, flux_var = "GPP_NT_VUT_REF", y_mode = "full")
 
+# There appear to be duplicates, so let's get rid of those
+daily_data2 <- daily_data %>% distinct(site, date_object, .keep_all = TRUE)
+nrow(daily_data)
+nrow(daily_data2)
 
 # # Run the phenology detection on your daily data
+
 phen_results <- detect_phenology_integral(
-  daily = daily_data,
+  daily = daily_data2,
   date_var = "date_object",
   knots = 10,
   flux_var = "GPP_NT_VUT_REF"
