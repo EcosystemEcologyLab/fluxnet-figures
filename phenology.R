@@ -42,7 +42,14 @@ daily <- map2(manifest$path, manifest$site, \(path, site) {
 daily
 
 ## Detect phenology
-phenology <- detect_phenology_integral(daily, threshold = 0.2, keep_data = TRUE)
+phenology <- daily %>%
+  distinct(site, date, .keep_all = TRUE) %>%
+  detect_phenology_integral(
+    threshold = 0.2,
+    date_var = "date", # whatever the date column is called
+    flux_var = "GPP_NT_VUT_MEAN",
+    keep_data = TRUE
+  )
 
 head(phenology)
 
