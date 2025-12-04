@@ -15,6 +15,8 @@ library(ggnewscale)
 library(forcats)
 library(minpack.lm) #for phenology code
 library(patchwork)
+library(splines)
+
 # ------------------------
 # Example Usage
 # ------------------------
@@ -913,134 +915,7 @@ compare_worldclim_siteclimate <- function(annual_data, site_metadata) {
 # Phenology Detection via Integral Smoothing
 # ------------------------
 
-# ------------------------
-# Phenology Detection via Integral Smoothing
-# ------------------------
-
-#' detect_phenology_integral: Estimate phenological transition dates via integral smoothing
-#'
-#' @param daily_data A dataframe with daily time series data including a 'site', 'date_object', and flux variable (e.g., GPP).
-#' @param knots Number of knots for spline smoothing (default = 10).
-#' @param flux_var Flux variable to analyze, typically "GPP_NT_VUT_REF".
-#' @return A list containing:
-#'   - phenology_df: A dataframe with columns site, year, SOS (start of season), POS (peak of season), and EOS (end of season).
-#'   - issues_df: A dataframe logging problematic records (e.g., SOS = 1, missing values, or temporal ordering issues).
-#'
-#' @details This method uses a cumulative-sum-based smoothing technique. The data is padded with ±30 days on either end of each year,
-#' spline-smoothed, and differentiated to obtain a smooth GPP curve. SOS and EOS are based on 20% of the max smoothed value, and POS is the day of peak.
-#'
-#' This approach increases signal-to-noise ratio and is more robust to parameter choices than direct smoothing.
-#'
-#' Note: Requires 'date_object' as a Date column and assumes daily temporal resolution.
-
-detect_phenology_integral <- function(daily_data, knots = 10, flux_var = "GPP_NT_VUT_REF") {
-  library(splines)
-  library(dplyr)
-  
-  if (!"date_object" %in% names(daily_data)) {
-    stop("daily_data must contain 'date_object' column as Date")
-  }
-  
-  daily_data <- daily_data %>%
-    filter(!is.na(.data[[flux_var]])) %>%
-    mutate(
-      year = lubridate::year(date_object),
-      DOY = lubridate::yday(date_object),
-      hemisphere = ifelse(LOCATION_LAT < 0, "SH", "NH"),
-      climate_zone = case_when(
-        abs(LOCATION_LAT) < 23.5 ~ "Tropical",
-        abs(LOCATION_LAT) >= 23.5 & LOCATION_LAT >= 0 ~ "Temperate_North",
-        abs(LOCATION_LAT) >= 23.5 & LOCATION_LAT < 0 ~ "Temperate_South",
-        TRUE ~ "Other"
-      ),
-      DOY_aligned = case_when(
-        climate_zone == "Temperate_South" ~ (DOY + 182) %% 365,
-        TRUE ~ DOY
-      )
-    )
-  
-  phenology_results <- list()
-  issues_log <- list()
-  
-  unique_sites <- unique(daily_data$site)
-  
-  for (site_id in unique_sites) {
-    site_data <- daily_data %>% filter(site == site_id)
-    unique_years <- sort(unique(site_data$year))
-    site_climate <- site_data$climate_zone[1]
-    
-    for (yr in unique_years) {
-      year_data <- site_data %>% filter(year == yr)
-      prev_data <- site_data %>% filter(year == yr - 1) %>% tail(30)
-      next_data <- site_data %>% filter(year == yr + 1) %>% head(30)
-      padded_data <- bind_rows(prev_data, year_data, next_data)
-      
-      padded_data <- padded_data %>%
-        arrange(date_object) %>%
-        mutate(cumflux = cumsum(.data[[flux_var]]))
-      
-      if (nrow(padded_data) < knots) next
-      
-      tryCatch({
-        spline_fit <- smooth.spline(x = 1:nrow(padded_data), y = padded_data$cumflux, df = knots)
-        deriv_vals <- predict(spline_fit, deriv = 1)$y
-        
-        smoothed_gpp <- tibble(
-          site = site_id,
-          date = padded_data$date_object,
-          DOY = padded_data$DOY,
-          DOY_aligned = padded_data$DOY_aligned,
-          year = padded_data$year,
-          smoothed_flux = deriv_vals
-        ) %>% filter(year == yr)
-        
-        max_flux <- max(smoothed_gpp$smoothed_flux, na.rm = TRUE)
-        threshold_20 <- 0.2 * max_flux
-        
-        sos <- smoothed_gpp %>% filter(smoothed_flux >= threshold_20) %>% slice_head(n = 1)
-        pos <- smoothed_gpp %>% filter(smoothed_flux == max_flux)
-        eos <- smoothed_gpp %>% filter(DOY > pos$DOY[1] & smoothed_flux <= threshold_20) %>% slice_head(n = 1)
-        
-        SOS_val <- sos$DOY[1]
-        POS_val <- pos$DOY[1]
-        EOS_val <- eos$DOY[1]
-        
-        issue_reason <- NULL
-        if (is.na(SOS_val) | is.na(POS_val) | is.na(EOS_val)) {
-          issue_reason <- "NA in SOS/POS/EOS"
-        } else if (SOS_val == 1) {
-          issue_reason <- "SOS = 1 (possibly spurious)"
-        } else if (site_climate != "Tropical" && (SOS_val >= POS_val || POS_val >= EOS_val)) {
-          issue_reason <- "Order violation (SOS >= POS or POS >= EOS)"
-        }
-        
-        if (!is.null(issue_reason)) {
-          issues_log[[length(issues_log) + 1]] <- tibble(
-            site = site_id,
-            year = yr,
-            SOS = SOS_val,
-            POS = POS_val,
-            EOS = EOS_val,
-            reason = issue_reason
-          )
-        }
-        
-        phenology_results[[length(phenology_results) + 1]] <- tibble(
-          site = site_id,
-          year = yr,
-          SOS = SOS_val,
-          POS = POS_val,
-          EOS = EOS_val
-        )
-      }, error = function(e) {})
-    }
-  }
-  
-  return(list(
-    phenology_df = bind_rows(phenology_results),
-    issues_df = bind_rows(issues_log)
-  ))
-}
+source("R/detect_phenology_integral.R")
 
 illustrate_integral_smoothing_example <- function(daily_data, flux_var = "GPP_NT_VUT_REF", site_id = NULL, year = NULL) {
   if (!is.null(site_id) & !is.null(year)) {
@@ -1115,10 +990,10 @@ illustrate_integral_smoothing <- function(daily_data, site_id, year, flux_var = 
 # Phenology Timeseries and Metric Scatter Visualization
 # ------------------------
 
-plot_phenology_timeseries <- function(phenology_df, issues_df, site_metadata, metric = "LOS", comparison_var = "MAT") {
+plot_phenology_timeseries <- function(phenology_df, site_metadata, metric = c("LOS", "SOS", "POS", "EOS"), comparison_var = "MAT") {
   library(dplyr)
   library(ggplot2)
-  
+  metric <- match.arg(metric)
   my_16_colors <- c(
     "#E41A1C", "#377EB8", "#4DAF4A", "#984EA3",
     "#FF7F00", "#FFFF33", "#A65628", "#F781BF",
@@ -1131,18 +1006,15 @@ plot_phenology_timeseries <- function(phenology_df, issues_df, site_metadata, me
   group3 <- c("GRA", "CRO", "WET")
   
   phen_clean <- phenology_df %>%
-    left_join(issues_df %>% select(-SOS, -POS, -EOS), by = c("site", "year")) %>%
     left_join(site_metadata, by = c("site" = "SITE_ID")) %>%
     mutate(LOS = EOS - SOS) %>%
-    filter(is.na(reason) | reason == "keep") %>%
+    filter(is.na(issues) | issues == "keep") %>%
     mutate(IGBP_group = case_when(
       IGBP %in% group1 ~ "1_Forest",
       IGBP %in% group2 ~ "2_Shrub/Opens",
       IGBP %in% group3 ~ "3_Grass/Crops/Wet",
       TRUE ~ "4_Other"
     ))
-  
-  if (!metric %in% c("LOS", "SOS", "POS", "EOS")) stop("Invalid metric.")
   
   ts_summary <- phen_clean %>%
     group_by(IGBP, IGBP_group, year) %>%
@@ -1155,7 +1027,7 @@ plot_phenology_timeseries <- function(phenology_df, issues_df, site_metadata, me
   
   p1 <- ggplot(ts_summary, aes(x = year, y = median_value)) +
     geom_ribbon(aes(ymin = lower_CI, ymax = upper_CI), fill = "steelblue", alpha = 0.3) +
-    geom_line(color = "steelblue", size = 1) +
+    geom_line(color = "steelblue", linewidth = 1) +
     scale_x_continuous(breaks = scales::pretty_breaks(n = 8)) +
     facet_wrap(~ reorder(IGBP, IGBP_group), scales = "free_y", ncol = 4) +
     labs(x = "Year", y = metric, title = paste("Median", metric, "±95% CI by Year & IGBP")) +
@@ -1344,36 +1216,42 @@ plot_phenology_timeseries <- function(phenology_df, issues_df, site_metadata, me
 #daily_data <- load_and_clean_daily_data()
 plot_seasonal_cycle(daily_data, flux_var = "GPP_NT_VUT_REF", y_mode = "full")
 
+# There appear to be duplicates, so let's get rid of those
+daily_data2 <- daily_data %>% distinct(site, date_object, .keep_all = TRUE)
+nrow(daily_data)
+nrow(daily_data2)
 
 # # Run the phenology detection on your daily data
+
 phen_results <- detect_phenology_integral(
-  daily_data = daily_data,
+  daily = daily_data2,
+  date_var = "date_object",
   knots = 10,
   flux_var = "GPP_NT_VUT_REF"
 )
-daily_data$NE
+# daily_data$NE
 
 
 # 
 # # The result is a list with two data frames:
-phenology_df <- phen_results$phenology_df
-issues_df    <- phen_results$issues_df
+# phenology_df <- phen_results$phenology_df
+# issues_df    <- phen_results$issues_df
 # 
 # illustrate_integral_smoothing_example(daily_data = daily_data)
 # # View successful phenology estimates
- head(phenology_df)
+phen_results %>% filter(is.na(issues))
 # 
 # # View records where phenology estimation failed or was suspicious
- head(issues_df)
+phen_results %>% filter(!is.na(issues))
 # 
 # # Optional: filter and inspect just order violations
- issues_df %>% filter(reason == "Order violation (SOS >= POS or POS >= EOS)")
+phen_results %>% filter(issues == "Order violation (SOS >= POS or POS >= EOS)")
 # # Plot the time series for SOS, POS, EOS grouped by IGBP type
- phen_plots <- plot_phenology_timeseries(phenology_df, site_metadata)
+phen_plots <- plot_phenology_timeseries(phen_results, site_metadata)
 
 
 # Example: Show the POS timing for Forest group
-print(phen_plots$SOS_Forest)
+# print(phen_plots$SOS_Forest) #Not sure what this was supposed to show, but its not something produced by plot_phenology_timeseries
 
 
 plot_flux_timeseries_by_igbp(annual_data, flux_var = "LE_F_MDS")
