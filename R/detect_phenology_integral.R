@@ -1,7 +1,12 @@
 #' Detect start and end of season from daily GPP data
 #'
 #' An implementation of the method described by Panwar et al. (2023) to detect
-#' the start and end of season using smoothed, cumulative GPP data.
+#' the start and end of season using smoothed, cumulative GPP data. This method
+#' uses a cumulative-sum-based smoothing technique. The data is padded with ±30
+#' days on either end of each year, spline-smoothed, and differentiated to
+#' obtain a smooth GPP curve. SOS and EOS are based on 20% of the max smoothed
+#' value, and POS is the day of peak. This approach increases signal-to-noise
+#' ratio and is more robust to parameter choices than direct smoothing.
 #'
 #' @author Eric R. Scott
 #' @references
@@ -17,12 +22,20 @@
 #'   `smooth.spline()`
 #' @param date_var Character; the name of the column containing the date.
 #' @param flux_var Character; the name of the column containing the flux data.
-#' @param method Currently only `"threshold"` is implemented.
+#' @param method Currently only `"threshold"` is implemented which defines SOS
+#'   and EOS as a threshold of the max smoothed value.
 #' @param threshold The threshold to use for detecting the start and end of
 #'   season
 #' @param keep_data Logical; if TRUE, the output contains a list column with the
 #'   raw and fitted data that can be used, e.g., for plotting the smoothed fit for
 #'   each site.
+#' @returns A tibble with columns for start of season (`SOS`), peak of season
+#'   (`POS`), and end of season (`EOS`) as well as a column, `issues`, with
+#'   descriptions of any problems (e.g. EOS is before SOS). If `keep_data` is
+#'   set to `TRUE`, then there is also a list-column, `data`, that contains
+#'   date, the `flux_var`, and the fitted smooth which can be useful for
+#'   plotting.
+#' @seealso [tidyr::unnest()] for dealing with list-columns.
 detect_phenology_integral <- function(
   daily,
   knots = 10,
@@ -101,15 +114,15 @@ detect_phenology_integral_site <- function(
     }
 
     padded_data <- daily_site %>%
-      dplyr::filter(dplyr::between(date, start, end)) %>%
-      dplyr::arrange(date) %>%
+      dplyr::filter(dplyr::between(.data[[date_var]], start, end)) %>%
+      dplyr::arrange(.data[[date_var]]) %>%
       dplyr::mutate(year = focal_year) %>%
       dplyr::mutate(
         DOY_padded = dplyr::case_when(
-          lubridate::year(date) == focal_year - 1 ~ (date -
+          lubridate::year(.data[[date_var]]) == focal_year - 1 ~ (.data[[date_var]] -
             lubridate::make_date(focal_year)) %>%
             as.numeric("days"),
-          lubridate::year(date) == focal_year + 1 ~ DOY +
+          lubridate::year(.data[[date_var]]) == focal_year + 1 ~ DOY +
             365 +
             lubridate::leap_year(focal_year),
           .default = DOY
@@ -118,7 +131,8 @@ detect_phenology_integral_site <- function(
       dplyr::mutate(cumflux = cumsum(GPP_NT_VUT_MEAN))
 
     m <- smooth.spline(
-      x = padded_data$DOY_padded,
+      # x = padded_data$DOY_padded,
+      x = 1:nrow(padded_data),
       y = padded_data$cumflux,
       df = knots
     )
@@ -159,7 +173,7 @@ detect_phenology_integral_site <- function(
     smooths_min <- smooths %>%
       purrr::map(\(df) {
         df %>%
-          dplyr::select(date, dplyr::all_of(flux_var), DOY, DOY_padded, smooth)
+          dplyr::select(dplyr::all_of(date_var, flux_var), DOY, DOY_padded, smooth)
       })
     out$data <- smooths_min
   }
